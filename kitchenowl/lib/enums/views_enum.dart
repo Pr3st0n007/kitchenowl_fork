@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:kitchenowl/app.dart';
 import 'package:kitchenowl/cubits/auth_cubit.dart';
 import 'package:kitchenowl/cubits/household_cubit.dart';
 import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/household.dart';
+import 'package:kitchenowl/widgets/agent_new_chat_fab.dart';
 import 'package:kitchenowl/widgets/expense_create_fab.dart';
 import 'package:kitchenowl/widgets/recipe_create_fab.dart';
 import 'package:kitchenowl/widgets/shoppinglist_confirm_remove_fab.dart';
@@ -14,6 +16,7 @@ enum ViewsEnum {
   recipes,
   planner,
   balances,
+  agent,
   more;
 
   String toLocalizedString(BuildContext context) {
@@ -24,6 +27,7 @@ enum ViewsEnum {
       loc.recipes,
       loc.mealPlanner,
       loc.balances,
+      loc.agent,
       loc.more,
     ][index];
   }
@@ -36,6 +40,7 @@ enum ViewsEnum {
       loc.recipes,
       loc.planner,
       loc.balances,
+      loc.agent,
       loc.more,
     ][index];
   }
@@ -61,6 +66,7 @@ enum ViewsEnum {
       Icons.receipt_outlined,
       Icons.calendar_today_outlined,
       Icons.account_balance_outlined,
+      Icons.smart_toy_outlined,
       App.isOffline ? Icons.cloud_off_rounded : Icons.house_rounded,
     ][index];
   }
@@ -71,6 +77,7 @@ enum ViewsEnum {
       Icons.receipt_rounded,
       Icons.calendar_today_rounded,
       Icons.account_balance_rounded,
+      Icons.smart_toy_rounded,
       App.isOffline ? Icons.cloud_off_rounded : Icons.house_rounded,
     ][index];
   }
@@ -79,6 +86,7 @@ enum ViewsEnum {
     return const [
       false,
       false,
+      true,
       true,
       true,
       false,
@@ -103,6 +111,14 @@ enum ViewsEnum {
         return App.settings.shoppingListTapToRemove
             ? null
             : const ShoppingListConfirmRememoveFab();
+      case ViewsEnum.agent:
+        final path = GoRouterState.of(context).uri.path;
+        return !BlocProvider.of<AuthCubit>(context, listen: true)
+                    .state
+                    .isOffline &&
+                path.endsWith('/agent')
+            ? const AgentNewChatFab()
+            : null;
       default:
         return null;
     }
@@ -114,6 +130,9 @@ enum ViewsEnum {
     }
     if (this == ViewsEnum.balances) {
       return household.featureExpenses ?? true;
+    }
+    if (this == ViewsEnum.agent) {
+      return household.featureAgent ?? false;
     }
 
     return true;
@@ -137,6 +156,8 @@ enum ViewsEnum {
         return ViewsEnum.planner;
       case 'balances':
         return ViewsEnum.balances;
+      case 'agent':
+        return ViewsEnum.agent;
       case 'profile':
       case 'more':
         return ViewsEnum.more;

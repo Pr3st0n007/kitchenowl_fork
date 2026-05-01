@@ -21,6 +21,7 @@ export 'tag.dart';
 export 'upload.dart';
 export 'category.dart';
 export 'household.dart';
+export 'agent.dart';
 
 enum Connection {
   disconnected,
@@ -255,6 +256,22 @@ class ApiService {
       _handleRequest(
         timeout: timeout,
         () => _client.put(
+          Uri.parse(baseUrl + url),
+          body: body,
+          headers: headers,
+          encoding: encoding,
+        ),
+      );
+
+  Future<http.Response> patch(
+    String url,
+    dynamic body, {
+    Encoding? encoding,
+    Duration? timeout,
+  }) =>
+      _handleRequest(
+        timeout: timeout,
+        () => _client.patch(
           Uri.parse(baseUrl + url),
           body: body,
           headers: headers,

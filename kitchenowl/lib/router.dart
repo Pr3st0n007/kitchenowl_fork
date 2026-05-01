@@ -16,6 +16,7 @@ import 'package:kitchenowl/pages/expense_page.dart';
 import 'package:kitchenowl/pages/household_page/_export.dart';
 import 'package:kitchenowl/pages/household_list_page.dart';
 import 'package:kitchenowl/pages/household_about_page.dart';
+import 'package:kitchenowl/pages/agent_chat_page.dart';
 import 'package:kitchenowl/pages/login_page.dart';
 import 'package:kitchenowl/pages/login_redirect_page.dart';
 import 'package:kitchenowl/pages/onboarding_page.dart';
@@ -378,6 +379,30 @@ final router = GoRouter(
                                   state.pathParameters['expenseId'] ?? ''),
                               paidById: 0,
                             ),
+                  ),
+                ),
+              ],
+            ),
+            GoRoute(
+              path: "agent",
+              pageBuilder: (context, state) => FadeThroughTransitionPage(
+                key: state.pageKey,
+                name: state.name,
+                child: const AgentChatListPage(),
+              ),
+              routes: [
+                GoRoute(
+                  path: ':chatId',
+                  builder: (context, state) => AgentChatPage(
+                    household: ((state.extra is Household?)
+                            ? (state.extra as Household?)
+                            : null) ??
+                        Household(
+                          id: int.tryParse(state.pathParameters['id'] ?? '') ??
+                              -1,
+                        ),
+                    chatId:
+                        int.tryParse(state.pathParameters['chatId'] ?? '') ?? 0,
                   ),
                 ),
               ],
