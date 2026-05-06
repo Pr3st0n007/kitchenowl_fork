@@ -27,6 +27,7 @@ class LLMConfig extends Model {
   final String? initialGreeting;
   final bool enabled;
   final bool apiKeySet;
+  final bool braveSearchApiKeySet;
   final int? maxTokens;
   final double? temperature;
   final String? defaultBaseUrl;
@@ -42,6 +43,7 @@ class LLMConfig extends Model {
     this.initialGreeting,
     this.enabled = false,
     this.apiKeySet = false,
+    this.braveSearchApiKeySet = false,
     this.maxTokens,
     this.temperature,
     this.defaultBaseUrl,
@@ -59,6 +61,7 @@ class LLMConfig extends Model {
       initialGreeting: map['initial_greeting'] as String?,
       enabled: map['enabled'] as bool? ?? false,
       apiKeySet: map['api_key_set'] as bool? ?? false,
+      braveSearchApiKeySet: map['brave_search_api_key_set'] as bool? ?? false,
       maxTokens: map['max_tokens'] as int?,
       temperature: (map['temperature'] as num?)?.toDouble(),
       defaultBaseUrl: map['default_base_url'] as String?,
@@ -77,6 +80,7 @@ class LLMConfig extends Model {
     String? initialGreeting,
     bool? enabled,
     bool? apiKeySet,
+    bool? braveSearchApiKeySet,
     int? maxTokens,
     double? temperature,
   }) =>
@@ -90,6 +94,7 @@ class LLMConfig extends Model {
         initialGreeting: initialGreeting ?? this.initialGreeting,
         enabled: enabled ?? this.enabled,
         apiKeySet: apiKeySet ?? this.apiKeySet,
+        braveSearchApiKeySet: braveSearchApiKeySet ?? this.braveSearchApiKeySet,
         maxTokens: maxTokens ?? this.maxTokens,
         temperature: temperature ?? this.temperature,
         defaultBaseUrl: defaultBaseUrl,
@@ -119,6 +124,7 @@ class LLMConfig extends Model {
         initialGreeting,
         enabled,
         apiKeySet,
+        braveSearchApiKeySet,
         maxTokens,
         temperature,
       ];

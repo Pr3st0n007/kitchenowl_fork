@@ -87,6 +87,8 @@ def update_config(args, household_id):
         cfg.model = (args["model"] or "").strip() or None
     if "api_key" in args:
         cfg.set_api_key(args["api_key"])
+    if "brave_search_api_key" in args:
+        cfg.set_brave_search_api_key(args["brave_search_api_key"])
     if "system_prompt" in args:
         cfg.system_prompt = args["system_prompt"]
     if "initial_greeting" in args:

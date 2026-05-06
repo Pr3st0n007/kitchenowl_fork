@@ -13,7 +13,6 @@ import 'package:kitchenowl/models/household.dart';
 import 'package:kitchenowl/models/item.dart';
 import 'package:kitchenowl/models/recipe.dart';
 import 'package:kitchenowl/services/api/api_service.dart';
-import 'package:kitchenowl/widgets/agent_persona_picker.dart';
 import 'package:kitchenowl/widgets/agent_tool_call_card.dart';
 import 'package:kitchenowl/widgets/recipe_markdown_body.dart';
 import 'package:kitchenowl/widgets/typing_indicator.dart';

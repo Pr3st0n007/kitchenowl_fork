@@ -22,6 +22,7 @@ def test_get_initial_config_creates_default(user_client_with_household, househol
     body = res.get_json()
     assert body["household_id"] == household_id
     assert body["api_key_set"] is False
+    assert body["brave_search_api_key_set"] is False
     assert body["enabled"] is False
     # The encrypted key column must never be exposed.
     assert "api_key_encrypted" not in body
@@ -34,6 +35,7 @@ def test_update_config_stores_encrypted_key(user_client_with_household, househol
         "provider": "gemini",
         "model": "gemini-1.5-flash",
         "api_key": "super-secret-key",
+        "brave_search_api_key": "brave-secret-key",
         "system_prompt": "Vegetarisch, ohne Pilze.",
         "enabled": True,
     }
@@ -43,7 +45,9 @@ def test_update_config_stores_encrypted_key(user_client_with_household, househol
     assert body["provider"] == "gemini"
     assert body["model"] == "gemini-1.5-flash"
     assert body["api_key_set"] is True
+    assert body["brave_search_api_key_set"] is True
     assert "super-secret-key" not in json.dumps(body)
+    assert "brave-secret-key" not in json.dumps(body)
     assert body["enabled"] is True
 
     # Reading the config back never returns the key.
@@ -61,6 +65,20 @@ def test_clear_api_key_with_empty_string(user_client_with_household, household_i
     )
     assert res.status_code == 200
     assert res.get_json()["api_key_set"] is False
+
+
+def test_clear_brave_search_api_key_with_empty_string(
+    user_client_with_household, household_id
+):
+    user_client_with_household.put(
+        _config_path(household_id),
+        json={"brave_search_api_key": "abc"},
+    )
+    res = user_client_with_household.put(
+        _config_path(household_id), json={"brave_search_api_key": ""}
+    )
+    assert res.status_code == 200
+    assert res.get_json()["brave_search_api_key_set"] is False
 
 
 def _enable_agent_feature(client, household_id):
@@ -493,9 +511,7 @@ def test_persona_default_global_cannot_be_deleted(
 ):
     _configure_ready_agent(user_client_with_household, household_id)
     res = user_client_with_household.get(_personas_path(household_id))
-    default = next(
-        p for p in res.get_json()["personas"] if p.get("is_default_global")
-    )
+    default = next(p for p in res.get_json()["personas"] if p.get("is_default_global"))
     res = user_client_with_household.delete(
         f"{_personas_path(household_id)}/{default['id']}"
     )
@@ -581,9 +597,7 @@ def test_auto_title_truncates_first_message_and_does_not_overwrite_lock(
     )
 
     # Second user message would normally trigger LLM rename, but lock holds.
-    with patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
-    ):
+    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat):
         res = user_client_with_household.post(
             f"{_chats_path(household_id)}/{chat_id}/messages",
             json={"content": "Und was zum Nachtisch?"},
@@ -665,7 +679,6 @@ def test_persona_system_prompt_keeps_recipe_formatting_rules(
     assert "must NOT override" in system
 
 
-
 # ============================================================================
 # Rewind / edit / regenerate tests
 # ============================================================================
@@ -725,18 +738,14 @@ def _create_chat_with_recipe(client, household_id):
 
 
 def _msg_path(household_id, chat_id, message_id):
-    return (
-        f"/api/household/{household_id}/agent/chats/{chat_id}/messages/{message_id}"
-    )
+    return f"/api/household/{household_id}/agent/chats/{chat_id}/messages/{message_id}"
 
 
 def test_tool_message_has_undo_flag(user_client_with_household, household_id):
     chat_id, _, tool_id, _ = _create_chat_with_recipe(
         user_client_with_household, household_id
     )
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     assert res.status_code == 200
     msgs = res.get_json()["messages"]
     tool_msg = next(m for m in msgs if m["id"] == tool_id)
@@ -752,9 +761,7 @@ def test_rewind_preview_lists_reversible_recipe(
         user_client_with_household, household_id
     )
     # Find the user message (first message in chat) and rewind to it.
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     user_msg = next(m for m in res.get_json()["messages"] if m["role"] == "user")
 
     res = user_client_with_household.patch(
@@ -783,9 +790,7 @@ def test_rewind_confirm_undoes_recipe_and_truncates(
     chat_id, recipe_id, _, _ = _create_chat_with_recipe(
         user_client_with_household, household_id
     )
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     msgs = res.get_json()["messages"]
     user_msg = next(m for m in msgs if m["role"] == "user")
     later_ids = {m["id"] for m in msgs if m["id"] > user_msg["id"]}
@@ -810,9 +815,7 @@ def test_rewind_skip_undo_keeps_recipe(user_client_with_household, household_id)
     chat_id, recipe_id, tool_id, _ = _create_chat_with_recipe(
         user_client_with_household, household_id
     )
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     user_msg = next(m for m in res.get_json()["messages"] if m["role"] == "user")
 
     res = user_client_with_household.patch(
@@ -842,9 +845,7 @@ def test_rewind_detects_external_recipe_modification(
     )
     assert res.status_code == 200, res.get_data(as_text=True)
 
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     user_msg = next(m for m in res.get_json()["messages"] if m["role"] == "user")
 
     # Preview should mark the create_recipe op non-reversible (conflict).
@@ -853,7 +854,9 @@ def test_rewind_detects_external_recipe_modification(
         json={"action": "rewind"},
     )
     assert res.status_code == 200
-    create_ops = [p for p in res.get_json()["preview"] if p.get("tool") == "create_recipe"]
+    create_ops = [
+        p for p in res.get_json()["preview"] if p.get("tool") == "create_recipe"
+    ]
     assert create_ops
     assert create_ops[0]["reversible"] is False
     assert create_ops[0]["reason"] == "conflict"
@@ -865,7 +868,9 @@ def test_rewind_detects_external_recipe_modification(
     )
     assert res.status_code == 200, res.get_data(as_text=True)
     skipped = res.get_json()["skipped"]
-    assert any(s["reason"] == "conflict" and s["tool"] == "create_recipe" for s in skipped)
+    assert any(
+        s["reason"] == "conflict" and s["tool"] == "create_recipe" for s in skipped
+    )
 
     res = user_client_with_household.get(f"/api/recipe/{recipe_id}")
     assert res.status_code == 200
@@ -878,9 +883,7 @@ def test_edit_user_message_changes_content_and_truncates(
     chat_id, recipe_id, _, _ = _create_chat_with_recipe(
         user_client_with_household, household_id
     )
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     user_msg = next(m for m in res.get_json()["messages"] if m["role"] == "user")
 
     fake_responses = iter([LLMResponse(content="ok, soup it is", tool_calls=[])])
@@ -922,9 +925,7 @@ def test_edit_rejects_non_user_message(user_client_with_household, household_id)
     assert res.status_code == 400
 
 
-def test_regenerate_replays_assistant_turn(
-    user_client_with_household, household_id
-):
+def test_regenerate_replays_assistant_turn(user_client_with_household, household_id):
     chat_id, recipe_id, _, assistant_id = _create_chat_with_recipe(
         user_client_with_household, household_id
     )
@@ -1022,9 +1023,7 @@ def test_rewind_after_create_then_update_in_same_chat_deletes_recipe(
     assert res.get_json()["name"] == "Renamed By Agent"
 
     # Rewind to the very first user message.
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     user_msg = next(m for m in res.get_json()["messages"] if m["role"] == "user")
 
     # Preview must mark create_recipe reversible despite the later update.
@@ -1036,9 +1035,7 @@ def test_rewind_after_create_then_update_in_same_chat_deletes_recipe(
     create_ops = [
         p for p in res.get_json()["preview"] if p.get("tool") == "create_recipe"
     ]
-    assert create_ops and create_ops[0]["reversible"] is True, res.get_json()[
-        "preview"
-    ]
+    assert create_ops and create_ops[0]["reversible"] is True, res.get_json()["preview"]
 
     # Confirm: nothing skipped, recipe gone.
     res = user_client_with_household.patch(
@@ -1111,9 +1108,7 @@ def test_update_recipe_undo_restores_previous_name(
     assert res.get_json()["name"] == "Agent Name"
 
     # Rewind to user message.
-    res = user_client_with_household.get(
-        f"{_chats_path(household_id)}/{chat_id}"
-    )
+    res = user_client_with_household.get(f"{_chats_path(household_id)}/{chat_id}")
     user_msg = next(m for m in res.get_json()["messages"] if m["role"] == "user")
     res = user_client_with_household.patch(
         _msg_path(household_id, chat_id, user_msg["id"]),

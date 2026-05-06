@@ -66,7 +66,8 @@ class AgentRewindOutcome {
 extension AgentApi on ApiService {
   static const _agentSuffix = '/agent';
 
-  String _agentBase(Household household) => '${householdPath(household)}$_agentSuffix';
+  String _agentBase(Household household) =>
+      '${householdPath(household)}$_agentSuffix';
 
   // -------------------------------------------------------------- config
 
@@ -82,6 +83,7 @@ extension AgentApi on ApiService {
     String? baseUrl,
     String? model,
     String? apiKey,
+    String? braveSearchApiKey,
     String? systemPrompt,
     String? initialGreeting,
     bool? enabled,
@@ -93,6 +95,9 @@ extension AgentApi on ApiService {
     if (baseUrl != null) body['base_url'] = baseUrl;
     if (model != null) body['model'] = model;
     if (apiKey != null) body['api_key'] = apiKey;
+    if (braveSearchApiKey != null) {
+      body['brave_search_api_key'] = braveSearchApiKey;
+    }
     if (systemPrompt != null) body['system_prompt'] = systemPrompt;
     if (initialGreeting != null) body['initial_greeting'] = initialGreeting;
     if (enabled != null) body['enabled'] = enabled;

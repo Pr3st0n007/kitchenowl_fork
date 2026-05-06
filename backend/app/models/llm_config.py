@@ -1,7 +1,7 @@
 """LLM configuration for the recipe agent.
 
-Stored per household. The API key is encrypted at rest using
-:mod:`app.helpers.encryption`.
+Stored per household. Secrets (LLM API key and Brave Search API key) are
+encrypted at rest using :mod:`app.helpers.encryption`.
 """
 
 from __future__ import annotations
@@ -78,6 +78,7 @@ class LLMConfig(Model):
     base_url: Mapped[str | None] = db.Column(db.String(512))
     model: Mapped[str | None] = db.Column(db.String(128))
     api_key_encrypted: Mapped[str | None] = db.Column(db.String())
+    brave_search_api_key_encrypted: Mapped[str | None] = db.Column(db.String())
     system_prompt: Mapped[str | None] = db.Column(db.Text())
     initial_greeting: Mapped[str | None] = db.Column(db.Text())
     # Legacy column kept so existing rows still load; the suggestion
@@ -148,6 +149,23 @@ class LLMConfig(Model):
     def has_api_key(self) -> bool:
         return bool(self.api_key_encrypted)
 
+    def set_brave_search_api_key(self, api_key: str | None) -> None:
+        if api_key is None:
+            return
+        api_key = api_key.strip()
+        if api_key == "":
+            self.brave_search_api_key_encrypted = None
+        else:
+            self.brave_search_api_key_encrypted = encrypt_secret(api_key)
+
+    def get_brave_search_api_key(self) -> str | None:
+        if not self.brave_search_api_key_encrypted:
+            return None
+        return decrypt_secret(self.brave_search_api_key_encrypted)
+
+    def has_brave_search_api_key(self) -> bool:
+        return bool(self.brave_search_api_key_encrypted)
+
     def is_ready(self) -> bool:
         """Return True if the config has the minimum needed to call the LLM."""
         return bool(self.enabled and self.model and self.has_api_key())
@@ -161,6 +179,8 @@ class LLMConfig(Model):
         skip = list(skip_columns or [])
         if "api_key_encrypted" not in skip:
             skip.append("api_key_encrypted")
+        if "brave_search_api_key_encrypted" not in skip:
+            skip.append("brave_search_api_key_encrypted")
         # Suggestion guideline was removed as a feature; never surface it.
         if "suggestion_guideline" not in skip:
             skip.append("suggestion_guideline")
@@ -168,6 +188,7 @@ class LLMConfig(Model):
         if "provider" in res and isinstance(res["provider"], LLMProviderType):
             res["provider"] = res["provider"].value
         res["api_key_set"] = self.has_api_key()
+        res["brave_search_api_key_set"] = self.has_brave_search_api_key()
         res["effective_base_url"] = self.effective_base_url()
         res["default_base_url"] = self.default_base_url()
         return res

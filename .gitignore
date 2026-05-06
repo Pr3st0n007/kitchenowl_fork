@@ -147,6 +147,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!kitchenowl/lib/
+!kitchenowl/lib/**
 lib64/
 parts/
 sdist/

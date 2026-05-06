@@ -21,6 +21,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
   final _baseUrlCtrl = TextEditingController();
   final _modelCtrl = TextEditingController();
   final _apiKeyCtrl = TextEditingController();
+  final _braveApiKeyCtrl = TextEditingController();
   final _systemPromptCtrl = TextEditingController();
   final _initialGreetingCtrl = TextEditingController();
   LLMProvider _provider = LLMProvider.openai;
@@ -37,6 +38,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
     _baseUrlCtrl.dispose();
     _modelCtrl.dispose();
     _apiKeyCtrl.dispose();
+    _braveApiKeyCtrl.dispose();
     _systemPromptCtrl.dispose();
     _initialGreetingCtrl.dispose();
     _cubit.close();
@@ -60,6 +62,8 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
       baseUrl: _baseUrlCtrl.text.trim(),
       model: _modelCtrl.text.trim(),
       apiKey: _apiKeyCtrl.text.isNotEmpty ? _apiKeyCtrl.text : null,
+      braveSearchApiKey:
+          _braveApiKeyCtrl.text.isNotEmpty ? _braveApiKeyCtrl.text : null,
       systemPrompt: _systemPromptCtrl.text,
       initialGreeting: _initialGreetingCtrl.text,
       enabled: true,
@@ -67,6 +71,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
     if (!mounted) return;
     if (ok) {
       _apiKeyCtrl.clear();
+      _braveApiKeyCtrl.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(loc.saved)),
       );
@@ -120,7 +125,8 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                           ),
                         )
                         .toList(),
-                    onChanged: (v) => setState(() => _provider = v ?? _provider),
+                    onChanged: (v) =>
+                        setState(() => _provider = v ?? _provider),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -147,6 +153,19 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                       helperText: cfg?.apiKeySet == true
                           ? loc.agentApiKeyStored
                           : loc.agentApiKeyMissing,
+                    ),
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _braveApiKeyCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Brave Search API key',
+                      helperText: cfg?.braveSearchApiKeySet == true
+                          ? 'A Brave API key is stored. Enter a new one to overwrite, or leave empty to keep it.'
+                          : 'No Brave API key stored (web search falls back without it).',
                     ),
                     obscureText: true,
                     autocorrect: false,

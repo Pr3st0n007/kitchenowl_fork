@@ -26,6 +26,7 @@ from app.models import (
     Household,
     HouseholdMember,
     Item,
+    LLMConfig,
     Recipe,
     RecipeItems,
     RecipeTags,
@@ -594,12 +595,21 @@ def _tool_scrape_recipe(args: dict[str, Any]) -> Any:
 
 
 def _tool_web_search_recipes(args: dict[str, Any]) -> Any:
+    household_id = int(args["household_id"])
     query = str(args["query"]).strip()
     if not query:
         return {"items": []}
+    _require_household_access(household_id)
+
     max_results = int(args.get("max_results", 5) or 5)
     max_results = max(1, min(10, max_results))
-    results = search_recipes_web(query, max_results=max_results)
+    cfg = LLMConfig.find_by_household(household_id)
+    brave_api_key = cfg.get_brave_search_api_key() if cfg else None
+    results = search_recipes_web(
+        query,
+        max_results=max_results,
+        brave_api_key=brave_api_key,
+    )
     return {"items": results}
 
 
@@ -923,6 +933,7 @@ TOOLS: dict[str, tuple[dict[str, Any], Callable[[dict[str, Any]], Any]]] = {
         {
             "type": "object",
             "properties": {
+                "household_id": {"type": "integer"},
                 "query": {
                     "type": "string",
                     "description": "Free-form search query, e.g. 'vegan tomato pasta recipe'.",
@@ -932,7 +943,7 @@ TOOLS: dict[str, tuple[dict[str, Any], Callable[[dict[str, Any]], Any]]] = {
                     "description": "Number of results to return (1-10, default 5).",
                 },
             },
-            "required": ["query"],
+            "required": ["household_id", "query"],
         },
         _tool_web_search_recipes,
     ),

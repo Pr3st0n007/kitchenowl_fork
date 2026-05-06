@@ -1,0 +1,400 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import 'package:kitchenowl/cubits/agent_chat_list_cubit.dart';
+import 'package:kitchenowl/cubits/household_cubit.dart';
+import 'package:kitchenowl/helpers/agent_tool_arguments.dart';
+import 'package:kitchenowl/kitchenowl.dart';
+import 'package:kitchenowl/models/agent_chat.dart';
+import 'package:kitchenowl/models/household.dart';
+import 'package:kitchenowl/pages/agent_settings_page.dart';
+import 'package:kitchenowl/widgets/agent_persona_picker.dart';
+
+class AgentChatListPage extends StatelessWidget {
+  const AgentChatListPage({super.key});
+
+  Future<void> _openSettings(BuildContext context, Household household) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AgentSettingsPage(household: household),
+      ),
+    );
+  }
+
+  Widget _settingsActionBar(
+    BuildContext context,
+    Household household,
+  ) {
+    final loc = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, right: 4),
+      child: Row(
+        children: [
+          const Spacer(),
+          IconButton(
+            tooltip: loc.agentSettings,
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => _openSettings(context, household),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<_ChatGroup> _groupChatsByDay(List<AgentChat> chats, DateTime now) {
+    final sorted = [...chats]
+      ..sort((a, b) {
+        final ad = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bd = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bd.compareTo(ad);
+      });
+
+    final buckets = <_ChatBucket, List<AgentChat>>{
+      _ChatBucket.today: [],
+      _ChatBucket.yesterday: [],
+      _ChatBucket.twoDaysAgo: [],
+      _ChatBucket.older: [],
+    };
+
+    for (final chat in sorted) {
+      final bucket = _bucketForDate(chat.updatedAt, now);
+      buckets[bucket]!.add(chat);
+    }
+
+    return [
+      for (final bucket in _ChatBucket.values)
+        if (buckets[bucket]!.isNotEmpty)
+          _ChatGroup(bucket: bucket, chats: buckets[bucket]!),
+    ];
+  }
+
+  _ChatBucket _bucketForDate(DateTime? date, DateTime now) {
+    if (date == null) return _ChatBucket.older;
+    final local = date.toLocal();
+    final nowLocal = now.toLocal();
+    final today = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
+    final chatDay = DateTime(local.year, local.month, local.day);
+    final diffDays = today.difference(chatDay).inDays;
+
+    if (diffDays <= 0) return _ChatBucket.today;
+    if (diffDays == 1) return _ChatBucket.yesterday;
+    if (diffDays == 2) return _ChatBucket.twoDaysAgo;
+    return _ChatBucket.older;
+  }
+
+  String _bucketLabel(BuildContext context, _ChatBucket bucket) {
+    final loc = AppLocalizations.of(context)!;
+    switch (bucket) {
+      case _ChatBucket.today:
+        return loc.agentBucketToday;
+      case _ChatBucket.yesterday:
+        return loc.agentBucketYesterday;
+      case _ChatBucket.twoDaysAgo:
+        final code = Localizations.localeOf(context).languageCode;
+        return code == 'de' ? 'Vor 2 Tagen' : '2 days ago';
+      case _ChatBucket.older:
+        return loc.agentBucketOlder;
+    }
+  }
+
+  String _formatLastUpdated(BuildContext context, DateTime? updatedAt) {
+    if (updatedAt == null) return '';
+    final loc = AppLocalizations.of(context)!;
+    final local = updatedAt.toLocal();
+    final now = DateTime.now().toLocal();
+    final dayNow = DateTime(now.year, now.month, now.day);
+    final dayChat = DateTime(local.year, local.month, local.day);
+    final diffDays = dayNow.difference(dayChat).inDays;
+    final time = MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay.fromDateTime(local));
+
+    if (diffDays == 0) return time;
+    if (diffDays == 1) return '${loc.yesterday}, $time';
+    return '${MaterialLocalizations.of(context).formatShortDate(local)}, $time';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+
+    return BlocBuilder<AgentChatListCubit, AgentChatListState>(
+      builder: (context, state) {
+        final cubit = context.read<AgentChatListCubit>();
+        final household =
+            context.read<HouseholdCubit>().state.household;
+
+        if (state.loading && state.chats.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!state.agentReady) {
+          return SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _settingsActionBar(context, household),
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        loc.agentNotConfigured,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final chats = state.visibleChats;
+        final groupedChats = _groupChatsByDay(chats, DateTime.now());
+        final hasFilter =
+          state.filterPersonaId != null || state.search.trim().isNotEmpty;
+
+        return SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _settingsActionBar(context, household),
+              // Persona filter chips
+              if (state.personas.isNotEmpty)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: AgentPersonaPicker(
+                    personas: state.personas,
+                    selectedId: state.filterPersonaId,
+                    onChanged: cubit.setFilterPersona,
+                  ),
+                ),
+              // Search bar
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: loc.agentSearchChats,
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  onChanged: cubit.setSearch,
+                ),
+              ),
+              Expanded(
+                child: chats.isEmpty
+                    ? Center(
+                        child: Text(
+                          hasFilter ? loc.agentNoChatsForFilter : loc.agentNoChats,
+                        ),
+                      )
+                    : ListView(
+                        children: [
+                          for (final group in groupedChats) ...[
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                              child: Text(
+                                _bucketLabel(context, group.bucket),
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                            ),
+                            for (final chat in group.chats)
+                              Builder(
+                                builder: (ctx) {
+                                  final persona = state.personas
+                                      .cast<dynamic>()
+                                      .firstWhere(
+                                        (p) => p.id == chat.personaId,
+                                        orElse: () => null,
+                                      );
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      child: Icon(personaIconFor(persona)),
+                                    ),
+                                    title: Text(
+                                      chat.title?.isNotEmpty == true
+                                          ? chat.title!
+                                          : loc.agentChat,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: chat.lastUserMessage?.isNotEmpty == true
+                                        ? Text(
+                                            chat.lastUserMessage!,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        : null,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _formatLastUpdated(context, chat.updatedAt),
+                                          style:
+                                              Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                        PopupMenuButton<_ChatAction>(
+                                          tooltip: loc.more,
+                                          icon: const Icon(Icons.more_vert),
+                                          onSelected: (value) async {
+                                            switch (value) {
+                                              case _ChatAction.rename:
+                                                await _renameChat(
+                                                  context,
+                                                  cubit,
+                                                  chat,
+                                                  loc,
+                                                );
+                                                break;
+                                              case _ChatAction.delete:
+                                                await _confirmDelete(
+                                                  context,
+                                                  cubit,
+                                                  chat,
+                                                  loc,
+                                                );
+                                                break;
+                                            }
+                                          },
+                                          itemBuilder: (ctx) => [
+                                            PopupMenuItem<_ChatAction>(
+                                              value: _ChatAction.rename,
+                                              child: Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.edit_outlined,
+                                                    size: 18,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(loc.agentRenameChat),
+                                                ],
+                                              ),
+                                            ),
+                                            PopupMenuItem<_ChatAction>(
+                                              value: _ChatAction.delete,
+                                              child: Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.delete_outline,
+                                                    size: 18,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(loc.agentDeleteChat),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () => context.push(
+                                      '/household/${household.id}/agent/${chat.id}',
+                                      extra: household,
+                                    ),
+                                  );
+                                },
+                              ),
+                          ],
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    AgentChatListCubit cubit,
+    AgentChat chat,
+    AppLocalizations loc,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(loc.agentDeleteChat),
+        content: Text(loc.agentDeleteChatConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(loc.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(loc.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && chat.id != null) {
+      await cubit.deleteChat(chat.id!);
+    }
+  }
+
+  Future<void> _renameChat(
+    BuildContext context,
+    AgentChatListCubit cubit,
+    AgentChat chat,
+    AppLocalizations loc,
+  ) async {
+    if (chat.id == null) return;
+    final controller = TextEditingController(text: chat.title ?? '');
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(loc.agentRenameChat),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: loc.agentChatTitleHint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(''),
+            child: Text(loc.agentResetTitle),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: Text(loc.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: Text(loc.save),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    await cubit.renameChat(chat.id!, result);
+  }
+}
+
+enum _ChatBucket {
+  today,
+  yesterday,
+  twoDaysAgo,
+  older,
+}
+
+enum _ChatAction {
+  rename,
+  delete,
+}
+
+class _ChatGroup {
+  final _ChatBucket bucket;
+  final List<AgentChat> chats;
+
+  const _ChatGroup({
+    required this.bucket,
+    required this.chats,
+  });
+}

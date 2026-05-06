@@ -46,8 +46,12 @@ def _clean_url(href: str) -> str | None:
     return None
 
 
-def _search_brave(query: str, max_results: int) -> list[dict[str, Any]]:
-    api_key = os.getenv("BRAVE_SEARCH_API_KEY")
+def _search_brave(
+    query: str,
+    max_results: int,
+    brave_api_key: str | None = None,
+) -> list[dict[str, Any]]:
+    api_key = (brave_api_key or "").strip() or os.getenv("BRAVE_SEARCH_API_KEY")
     if not api_key:
         return []
     try:
@@ -132,7 +136,11 @@ def _search_duckduckgo(query: str, max_results: int) -> list[dict[str, Any]]:
     return out
 
 
-def search_recipes_web(query: str, max_results: int = 5) -> list[dict[str, Any]]:
+def search_recipes_web(
+    query: str,
+    max_results: int = 5,
+    brave_api_key: str | None = None,
+) -> list[dict[str, Any]]:
     """Return up to ``max_results`` web hits for ``query``.
 
     Each hit is a dict with ``title``, ``url`` and ``snippet``. The list is
@@ -149,7 +157,7 @@ def search_recipes_web(query: str, max_results: int = 5) -> list[dict[str, Any]]
 
     enriched = f"{query} recipe"
 
-    results = _search_brave(enriched, max_results)
+    results = _search_brave(enriched, max_results, brave_api_key=brave_api_key)
     if results:
         return results
 

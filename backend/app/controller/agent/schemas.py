@@ -15,6 +15,8 @@ class UpdateLLMConfig(Schema):
     model = fields.String(allow_none=True, validate=validate.Length(max=128))
     # ``api_key`` is write-only. Pass an empty string to clear the stored key.
     api_key = fields.String(allow_none=True)
+    # ``brave_search_api_key`` is write-only. Empty string clears it.
+    brave_search_api_key = fields.String(allow_none=True)
     system_prompt = fields.String(allow_none=True)
     initial_greeting = fields.String(allow_none=True)
     enabled = fields.Boolean()

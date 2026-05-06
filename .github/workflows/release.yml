@@ -2,10 +2,10 @@ name: Draft Github Release
 on:
   workflow_dispatch:
     # Enable manual run
-  push:
-    tags:
-      - "v*"
-      - "beta-v*"
+  # push:
+  #   tags:
+  #     - "v*"
+  #     - "beta-v*"
 
 jobs:
   draft-release:
