@@ -1,0 +1,66 @@
+name: Release Android APK
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "beta-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release-android:
+    name: Build and publish Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+        working-directory: kitchenowl
+
+      - name: Configure Android signing keystore
+        run: |
+          echo "$PLAY_STORE_UPLOAD_KEY" | base64 --decode > app/upload-keystore.jks
+          echo "storeFile=upload-keystore.jks" >> key.properties
+          echo "keyAlias=$KEYSTORE_KEY_ALIAS" >> key.properties
+          echo "storePassword=$KEYSTORE_STORE_PASSWORD" >> key.properties
+          echo "keyPassword=$KEYSTORE_KEY_PASSWORD" >> key.properties
+        env:
+          PLAY_STORE_UPLOAD_KEY: ${{ secrets.PLAY_STORE_UPLOAD_KEY }}
+          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+        working-directory: kitchenowl/android
+
+      - name: Build release APK
+        run: flutter build apk --release
+        working-directory: kitchenowl
+
+      - name: Prepare release asset
+        run: |
+          cp kitchenowl/build/app/outputs/flutter-apk/app-release.apk \
+            kitchenowl-android-${GITHUB_REF_NAME}.apk
+
+      - name: Publish GitHub release and upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          name: KitchenOwl ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ startsWith(github.ref_name, 'beta-v') }}
+          files: kitchenowl-android-${{ github.ref_name }}.apk
