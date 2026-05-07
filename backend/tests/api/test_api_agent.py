@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
+import os
 from unittest.mock import patch
 
 from app.service.llm.provider import LLMResponse
@@ -180,6 +183,243 @@ def test_chat_flow_runs_agent_and_creates_recipe(
     assert res.status_code == 200
     recipes = res.get_json()
     assert any(r["name"] == "Spaghetti Aglio e Olio" for r in recipes)
+
+
+def _upload_fixture_file(client, filename: str, data: bytes) -> str:
+    from app.config import UPLOAD_FOLDER
+
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    res = client.post(
+        "/api/upload",
+        data={"file": (io.BytesIO(data), filename)},
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 200, res.get_data(as_text=True)
+    return res.get_json()["filename"]
+
+
+def test_chat_message_with_image_attachment_is_multimodal(
+    user_client_with_household, household_id
+):
+    _configure_ready_agent(user_client_with_household, household_id)
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    chat_id = res.get_json()["id"]
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMB/ax7vF0AAAAASUVORK5CYII="
+    )
+    uploaded = _upload_fixture_file(user_client_with_household, "dish.png", png_bytes)
+
+    captured: dict = {}
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        captured["messages"] = messages
+        return LLMResponse(content="ok", tool_calls=[])
+
+    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat):
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages",
+            json={
+                "content": "Mach daraus ein Rezept",
+                "attached_files": [uploaded],
+            },
+        )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+    user_msg = next(m for m in captured["messages"] if m["role"] == "user")
+    assert isinstance(user_msg["content"], list)
+    assert any(p.get("type") == "image_url" for p in user_msg["content"])
+
+
+def test_chat_message_with_pdf_attachment_extracts_text(
+    user_client_with_household, household_id
+):
+    _configure_ready_agent(user_client_with_household, household_id)
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    chat_id = res.get_json()["id"]
+
+    fake_pdf = b"%PDF-1.1\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    uploaded = _upload_fixture_file(user_client_with_household, "recipe.pdf", fake_pdf)
+
+    captured: dict = {}
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        captured["messages"] = messages
+        return LLMResponse(content="ok", tool_calls=[])
+
+    with patch(
+        "app.service.llm.agent._extract_pdf_text", return_value="2 Eier\n1 TL Salz"
+    ):
+        with patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
+        ):
+            res = user_client_with_household.post(
+                f"{_chats_path(household_id)}/{chat_id}/messages",
+                json={
+                    "content": "",
+                    "attached_files": [uploaded],
+                },
+            )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+    user_msg = next(m for m in captured["messages"] if m["role"] == "user")
+    assert isinstance(user_msg["content"], list)
+    text_parts = [p.get("text") for p in user_msg["content"] if p.get("type") == "text"]
+    assert any("2 Eier" in (t or "") for t in text_parts)
+
+
+def test_chat_message_attachment_only_is_allowed(
+    user_client_with_household, household_id
+):
+    _configure_ready_agent(user_client_with_household, household_id)
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    chat_id = res.get_json()["id"]
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMB/ax7vF0AAAAASUVORK5CYII="
+    )
+    uploaded = _upload_fixture_file(user_client_with_household, "dish.png", png_bytes)
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        return LLMResponse(content="ok", tool_calls=[])
+
+    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat):
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages",
+            json={"content": "", "attached_files": [uploaded]},
+        )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+    roles = [m["role"] for m in res.get_json()["messages"]]
+    assert roles == ["user", "assistant"]
+
+
+def test_chat_message_reports_granular_attachment_errors(
+    user_client_with_household, household_id, caplog
+):
+    _configure_ready_agent(user_client_with_household, household_id)
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    chat_id = res.get_json()["id"]
+
+    uploaded_txt = _upload_fixture_file(
+        user_client_with_household,
+        "notes.txt",
+        b"this is plain text",
+    )
+
+    with caplog.at_level("WARNING"):
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages",
+            json={
+                "content": "",
+                "attached_files": [uploaded_txt, "missing-file-id.pdf"],
+            },
+        )
+
+    assert res.status_code == 400
+    detailed = "\n".join(r.message for r in caplog.records)
+    assert "Invalid attached files:" in detailed
+    assert f"{uploaded_txt}: unsupported type" in detailed
+    assert "missing-file-id.pdf: not found" in detailed
+
+
+def test_duplicate_file_ids_are_deduplicated_before_limit_check(
+    user_client_with_household, household_id
+):
+    """Duplicate IDs must be de-duplicated before the max-files limit is checked.
+
+    Previously the limit was enforced on the raw (pre-dedup) list, so 11 entries
+    of the same file would incorrectly raise a 400 even though only 1 unique file
+    was attached.  After the fix the limit is applied to the unique count.
+    """
+    from unittest.mock import patch
+
+    _configure_ready_agent(user_client_with_household, household_id)
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    chat_id = res.get_json()["id"]
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMB/ax7vF0AAAAASUVORK5CYII="
+    )
+    uploaded = _upload_fixture_file(user_client_with_household, "img.png", png_bytes)
+
+    # Send 11 copies of the same file ID – unique count is 1, well within the limit.
+    duplicate_ids = [uploaded] * 11
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        return LLMResponse(content="ok", tool_calls=[])
+
+    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat):
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages",
+            json={"content": "test", "attached_files": duplicate_ids},
+        )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+
+
+def test_agent_attached_files_are_not_deleted_as_unused(
+    user_client_with_household, household_id
+):
+    """Files referenced in agent message attachments must not be deleted by the
+    monthly cleanup job (``deleteUnusedFiles``), even though they have no direct
+    model relation (recipe / household / expense / profile picture).
+    """
+    from unittest.mock import patch
+    from app.service.delete_unused import deleteUnusedFiles
+    from app.models import File
+
+    _configure_ready_agent(user_client_with_household, household_id)
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    chat_id = res.get_json()["id"]
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMB/ax7vF0AAAAASUVORK5CYII="
+    )
+    uploaded = _upload_fixture_file(user_client_with_household, "keep_me.png", png_bytes)
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        return LLMResponse(content="ok", tool_calls=[])
+
+    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat):
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages",
+            json={"content": "use this image", "attached_files": [uploaded]},
+        )
+    assert res.status_code == 200, res.get_data(as_text=True)
+
+    # The File record has no recipe/household/expense FK so isUnused() returns True.
+    from app import app as flask_app
+
+    with flask_app.app_context():
+        f = File.find(uploaded)
+        assert f is not None
+        assert f.isUnused(), "Precondition: file should be considered unused on its own"
+
+        # But deleteUnusedFiles must protect it because it appears in attachments_json.
+        deleted = deleteUnusedFiles()
+        assert deleted == 0, f"Expected 0 deletions, got {deleted}"
+        assert File.find(uploaded) is not None, "File was incorrectly deleted"
+
+
+def test_update_config_sets_gemini_default_model_when_missing(
+    user_client_with_household, household_id
+):
+    _enable_agent_feature(user_client_with_household, household_id)
+    res = user_client_with_household.put(
+        _config_path(household_id),
+        json={
+            "provider": "gemini",
+            "api_key": "sk-test",
+            "enabled": True,
+        },
+    )
+    assert res.status_code == 200, res.get_data(as_text=True)
+    assert res.get_json()["model"] == "gemini-flash-latest"
 
 
 def test_chat_message_surfaces_provider_error(user_client_with_household, household_id):

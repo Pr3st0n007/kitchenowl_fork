@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kitchenowl/cubits/agent_chat_cubit.dart';
 import 'package:kitchenowl/cubits/agent_chat_list_cubit.dart';
 import 'package:kitchenowl/helpers/agent_tool_arguments.dart';
+import 'package:kitchenowl/helpers/named_bytearray.dart';
 import 'package:kitchenowl/helpers/recipe_item_markdown_extension.dart';
 import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/agent_chat.dart';
@@ -48,6 +50,9 @@ class _AgentChatPageState extends State<AgentChatPage> {
   static const double _kPanelDefaultWidth = 380;
   double _panelWidth = _kPanelDefaultWidth;
 
+  // Maximum PDF file size accepted by the backend (AGENT_MAX_FILE_SIZE default: 20 MB).
+  static const int _kMaxPdfFileSizeBytes = 20 * 1000 * 1000;
+
   @override
   void initState() {
     super.initState();
@@ -91,7 +96,11 @@ class _AgentChatPageState extends State<AgentChatPage> {
 
   Future<void> _send() async {
     final text = _inputCtrl.text;
-    if (text.trim().isEmpty) return;
+    final state = _cubit.state;
+    final hasAttachments = state.attachedRecipeIds.isNotEmpty ||
+        state.attachedItemIds.isNotEmpty ||
+        state.attachedFiles.isNotEmpty;
+    if (text.trim().isEmpty && !hasAttachments) return;
     _inputCtrl.clear();
     await _cubit.sendMessage(text);
     _scrollToEnd();
@@ -142,6 +151,40 @@ class _AgentChatPageState extends State<AgentChatPage> {
     if (picked?.id != null) {
       _cubit.addAttachedItem(picked!.id!, name: picked.name);
     }
+  }
+
+  Future<void> _pickImageAttachment(BuildContext context) async {
+    final loc = AppLocalizations.of(context)!;
+    final file = await selectFile(
+      context: context,
+      title: loc.agentAttachImage,
+    );
+    if (!context.mounted || file == null || file.isEmpty) return;
+    _cubit.addAttachedFile(file);
+  }
+
+  Future<void> _pickPdfAttachment(BuildContext context) async {
+    final loc = AppLocalizations.of(context)!;
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+      withData: true,
+    );
+    if (!context.mounted) return;
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.first;
+    if ((picked.name).isEmpty || picked.bytes == null || picked.bytes!.isEmpty) {
+      return;
+    }
+    // Guard against oversized files (aligned with the backend AGENT_MAX_FILE_SIZE
+    // default of 20 MB) to avoid excessive memory usage and unnecessary uploads.
+    if (picked.size > _kMaxPdfFileSizeBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(loc.agentFileTooLarge)),
+      );
+      return;
+    }
+    _cubit.addAttachedFile(NamedByteArray(picked.name, picked.bytes!));
   }
 
   Future<void> _renameDialog(BuildContext context, AgentChat? chat) async {
@@ -432,10 +475,15 @@ class _AgentChatPageState extends State<AgentChatPage> {
                     attachedItemIds: state.attachedItemIds,
                     attachedRecipeNames: state.attachedRecipeNames,
                     attachedItemNames: state.attachedItemNames,
+                    attachedFiles:
+                        state.attachedFiles.map((f) => f.filename).toList(),
                     onRemoveRecipe: _cubit.removeAttachedRecipe,
                     onRemoveItem: _cubit.removeAttachedItem,
+                    onRemoveFile: _cubit.removeAttachedFile,
                     onPickRecipe: () => _pickRecipe(context),
                     onPickItem: () => _pickItem(context),
+                    onPickImage: () => _pickImageAttachment(context),
+                    onPickPdf: () => _pickPdfAttachment(context),
                   ),
                 ],
               );
@@ -1172,10 +1220,14 @@ class _Composer extends StatelessWidget {
   final List<int> attachedItemIds;
   final Map<int, String> attachedRecipeNames;
   final Map<int, String> attachedItemNames;
+  final List<String> attachedFiles;
   final ValueChanged<int> onRemoveRecipe;
   final ValueChanged<int> onRemoveItem;
+  final ValueChanged<String> onRemoveFile;
   final VoidCallback onPickRecipe;
   final VoidCallback onPickItem;
+  final VoidCallback onPickImage;
+  final VoidCallback onPickPdf;
 
   const _Composer({
     required this.controller,
@@ -1187,17 +1239,23 @@ class _Composer extends StatelessWidget {
     required this.attachedItemIds,
     required this.attachedRecipeNames,
     required this.attachedItemNames,
+    required this.attachedFiles,
     required this.onRemoveRecipe,
     required this.onRemoveItem,
+    required this.onRemoveFile,
     required this.onPickRecipe,
     required this.onPickItem,
+    required this.onPickImage,
+    required this.onPickPdf,
   });
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final hasAttachments =
-        attachedRecipeIds.isNotEmpty || attachedItemIds.isNotEmpty;
+      attachedRecipeIds.isNotEmpty ||
+      attachedItemIds.isNotEmpty ||
+      attachedFiles.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
       child: Column(
@@ -1227,6 +1285,19 @@ class _Composer extends StatelessWidget {
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
+                  for (final fileName in attachedFiles)
+                    InputChip(
+                      avatar: Icon(
+                        fileName.toLowerCase().endsWith('.pdf')
+                            ? Icons.picture_as_pdf_outlined
+                            : Icons.image_outlined,
+                        size: 16,
+                      ),
+                      label: Text(fileName),
+                      onDeleted: sending ? null : () => onRemoveFile(fileName),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                 ],
               ),
             ),
@@ -1243,6 +1314,12 @@ class _Composer extends StatelessWidget {
                       break;
                     case 'item':
                       onPickItem();
+                      break;
+                    case 'image':
+                      onPickImage();
+                      break;
+                    case 'pdf':
+                      onPickPdf();
                       break;
                   }
                 },
@@ -1262,6 +1339,14 @@ class _Composer extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(loc.agentAttachItem),
                     ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'image',
+                    child: _AttachImageMenuLabel(),
+                  ),
+                  const PopupMenuItem(
+                    value: 'pdf',
+                    child: _AttachPdfMenuLabel(),
                   ),
                 ],
               ),
@@ -1298,6 +1383,34 @@ class _Composer extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _AttachImageMenuLabel extends StatelessWidget {
+  const _AttachImageMenuLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    return Row(children: [
+      const Icon(Icons.image_outlined, size: 18),
+      const SizedBox(width: 8),
+      Text(loc.agentAttachImage),
+    ]);
+  }
+}
+
+class _AttachPdfMenuLabel extends StatelessWidget {
+  const _AttachPdfMenuLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    return Row(children: [
+      const Icon(Icons.picture_as_pdf_outlined, size: 18),
+      const SizedBox(width: 8),
+      Text(loc.agentAttachPdf),
+    ]);
   }
 }
 

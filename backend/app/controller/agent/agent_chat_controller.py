@@ -206,6 +206,7 @@ def post_message(args, household_id, chat_id):
             args["content"],
             attached_recipe_ids=args.get("attached_recipe_ids") or [],
             attached_item_ids=args.get("attached_item_ids") or [],
+            attached_file_ids=args.get("attached_files") or [],
         )
     except InvalidUsage:
         raise

@@ -1,34 +1,88 @@
 import 'package:equatable/equatable.dart';
 import 'package:kitchenowl/models/model.dart';
 
+class AgentFileAttachment extends Equatable {
+  final String id;
+  final String filename;
+  final String? mimeType;
+  final int? size;
+  final DateTime? uploadedAt;
+
+  const AgentFileAttachment({
+    required this.id,
+    required this.filename,
+    this.mimeType,
+    this.size,
+    this.uploadedAt,
+  });
+
+  factory AgentFileAttachment.fromJson(Map<String, dynamic> map) {
+    DateTime? uploadedAt;
+    final rawUploadedAt = map['uploaded_at'];
+    if (rawUploadedAt is String) {
+      uploadedAt = DateTime.tryParse(rawUploadedAt);
+    }
+
+    return AgentFileAttachment(
+      id: (map['id'] as String?) ?? '',
+      filename: (map['filename'] as String?) ?? (map['id'] as String?) ?? '',
+      mimeType: map['mime_type'] as String?,
+      size: map['size'] as int?,
+      uploadedAt: uploadedAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'filename': filename,
+        'mime_type': mimeType,
+        'size': size,
+        'uploaded_at': uploadedAt?.toIso8601String(),
+      };
+
+  @override
+  List<Object?> get props => [id, filename, mimeType, size, uploadedAt];
+}
+
 class AgentMessageAttachments extends Equatable {
   final List<int> recipeIds;
   final List<int> itemIds;
+  final List<AgentFileAttachment> files;
 
   const AgentMessageAttachments({
     this.recipeIds = const [],
     this.itemIds = const [],
+    this.files = const [],
   });
 
-  bool get isEmpty => recipeIds.isEmpty && itemIds.isEmpty;
+  bool get isEmpty => recipeIds.isEmpty && itemIds.isEmpty && files.isEmpty;
 
   factory AgentMessageAttachments.fromJson(Map<String, dynamic>? map) {
     if (map == null) return const AgentMessageAttachments();
     final r = map['recipe_ids'];
     final i = map['item_ids'];
+    final f = map['files'];
     return AgentMessageAttachments(
       recipeIds: r is List ? r.whereType<int>().toList() : const [],
       itemIds: i is List ? i.whereType<int>().toList() : const [],
+      files: f is List
+          ? f
+              .whereType<Map>()
+              .map((e) => AgentFileAttachment.fromJson(Map<String, dynamic>.from(e)))
+              .where((e) => e.id.isNotEmpty)
+              .toList()
+          : const [],
     );
   }
 
   Map<String, dynamic> toJson() => {
         'recipe_ids': recipeIds,
         'item_ids': itemIds,
+        'files': files.map((f) => f.toJson()).toList(),
       };
 
   @override
-  List<Object?> get props => [recipeIds, itemIds];
+  List<Object?> get props => [recipeIds, itemIds, files];
 }
 
 enum AgentMessageRole {

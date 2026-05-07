@@ -18,6 +18,7 @@ from .schemas import UpdateLLMConfig
 agentConfigHousehold = Blueprint("agentConfig", __name__)
 
 _logger = logging.getLogger(__name__)
+_DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 
 
 # Fields a non-admin household member is allowed to see. The system prompt,
@@ -85,6 +86,10 @@ def update_config(args, household_id):
         cfg.base_url = (args["base_url"] or "").strip() or None
     if "model" in args:
         cfg.model = (args["model"] or "").strip() or None
+    elif cfg.provider == LLMProviderType.GEMINI and not (cfg.model or "").strip():
+        # When Gemini is selected without an explicit model, use the
+        # lightweight multimodal default that works for image+text prompts.
+        cfg.model = _DEFAULT_GEMINI_MODEL
     if "api_key" in args:
         cfg.set_api_key(args["api_key"])
     if "brave_search_api_key" in args:

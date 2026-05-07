@@ -125,8 +125,13 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                           ),
                         )
                         .toList(),
-                    onChanged: (v) =>
-                        setState(() => _provider = v ?? _provider),
+                    onChanged: (v) => setState(() {
+                      _provider = v ?? _provider;
+                      if (_provider == LLMProvider.gemini &&
+                          _modelCtrl.text.trim().isEmpty) {
+                        _modelCtrl.text = 'gemini-flash-latest';
+                      }
+                    }),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -142,7 +147,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                     controller: _modelCtrl,
                     decoration: InputDecoration(
                       labelText: loc.agentModel,
-                      hintText: 'gpt-4o-mini / gemini-1.5-flash / ...',
+                      hintText: 'gemini-flash-latest / gpt-4o-mini / ...',
                     ),
                   ),
                   const SizedBox(height: 12),

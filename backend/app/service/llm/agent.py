@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import logging
+import mimetypes
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any
 
 from app import db
+from app.config import AGENT_MAX_FILE_SIZE, AGENT_MAX_FILES_PER_MESSAGE, UPLOAD_FOLDER
 from app.errors import InvalidUsage
 from app.models import (
     AgentChat,
@@ -16,6 +21,7 @@ from app.models import (
     AgentMessageRole,
     AgentRecipeCard,
     CARD_SOURCE_CREATED,
+    File,
     LLMConfig,
 )
 from app.models.agent_persona import AgentPersona
@@ -44,6 +50,7 @@ _SUGGESTIONS_RE = re.compile(r"\[suggestions:\s*[^\]\n]+\]\s*$", re.IGNORECASE)
 # user-facing reply. The frontend strips the marker before rendering, so
 # users only ever see the chips themselves.
 _FALLBACK_SUGGESTIONS = "[suggestions: Ja | Nein | Anderes Rezept]"
+_PDF_TEXT_CHAR_LIMIT = 12000
 
 
 def _ensure_suggestions(text: str | None) -> str:
@@ -223,6 +230,194 @@ def _deserialise_tool_calls(value: str | None) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def _normalise_attached_files(
+    attached_file_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    ids = [str(fid).strip() for fid in (attached_file_ids or []) if str(fid).strip()]
+
+    # De-duplicate while preserving order before enforcing the per-message limit
+    # so that duplicate IDs in the request don't incorrectly trigger the cap.
+    deduped_ids = list(dict.fromkeys(ids))
+    if len(deduped_ids) > AGENT_MAX_FILES_PER_MESSAGE:
+        raise InvalidUsage(
+            f"A maximum of {AGENT_MAX_FILES_PER_MESSAGE} files can be attached per message"
+        )
+    files: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for file_id in deduped_ids:
+        f = File.find(file_id)
+        if not f:
+            errors.append(f"{file_id}: not found")
+            continue
+        f.checkAuthorized()
+
+        path = os.path.join(UPLOAD_FOLDER, f.filename)
+        if not os.path.exists(path):
+            errors.append(f"{file_id}: missing on disk")
+            continue
+
+        size = os.path.getsize(path)
+        if size > AGENT_MAX_FILE_SIZE:
+            errors.append(
+                f"{file_id}: exceeds maximum size ({size} > {AGENT_MAX_FILE_SIZE} bytes)"
+            )
+            continue
+
+        mime_type = (
+            mimetypes.guess_type(f.filename)[0] or "application/octet-stream"
+        ).lower()
+        if not (mime_type.startswith("image/") or mime_type == "application/pdf"):
+            errors.append(
+                f"{file_id}: unsupported type '{mime_type}' (only image/* and application/pdf)"
+            )
+            continue
+
+        created_at = getattr(f, "created_at", None)
+        files.append(
+            {
+                "id": f.filename,
+                "filename": f.filename,
+                "mime_type": mime_type,
+                "size": size,
+                "uploaded_at": created_at.isoformat() if created_at else None,
+            }
+        )
+
+    if errors:
+        raise InvalidUsage("Invalid attached files: " + "; ".join(errors))
+
+    return files
+
+
+def _read_attached_file_bytes(file_id: str) -> bytes:
+    path = os.path.join(UPLOAD_FOLDER, file_id)
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise InvalidUsage(f"Failed to read attached file '{file_id}'") from exc
+
+
+def _extract_pdf_text(file_bytes: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        return ""
+
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes), strict=False)
+    except Exception:
+        return ""
+
+    chunks: list[str] = []
+    chars = 0
+    for page in reader.pages[:20]:
+        try:
+            text = (page.extract_text() or "").strip()
+        except Exception:
+            continue
+        if not text:
+            continue
+        remaining = _PDF_TEXT_CHAR_LIMIT - chars
+        if remaining <= 0:
+            break
+        clipped = text[:remaining]
+        chunks.append(clipped)
+        chars += len(clipped)
+
+    return "\n\n".join(chunks)
+
+
+def _decode_attachments(msg: AgentMessage) -> dict[str, Any]:
+    if not msg.attachments_json:
+        return {}
+    try:
+        data = json.loads(msg.attachments_json)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _build_attachment_hints(data: dict[str, Any]) -> list[str]:
+    recipe_ids = data.get("recipe_ids") or []
+    item_ids = data.get("item_ids") or []
+    hints: list[str] = []
+    if recipe_ids:
+        hints.append(
+            "Attached recipes (look them up via get_recipe if you need details): "
+            + ", ".join(str(i) for i in recipe_ids)
+        )
+    if item_ids:
+        hints.append(
+            "Attached pantry/shopping items (item ids): "
+            + ", ".join(str(i) for i in item_ids)
+        )
+    return hints
+
+
+def _build_user_content(msg: AgentMessage) -> str | list[dict[str, Any]]:
+    content = msg.content or ""
+    data = _decode_attachments(msg)
+    hints = _build_attachment_hints(data)
+
+    files = data.get("files") or []
+    if not isinstance(files, list) or not files:
+        if hints:
+            return content + "\n\n[Attached context]\n" + "\n".join(hints)
+        return content
+
+    parts: list[dict[str, Any]] = []
+    if content:
+        parts.append({"type": "text", "text": content})
+
+    for file_meta in files:
+        if not isinstance(file_meta, dict):
+            continue
+        file_id = str(file_meta.get("id") or "").strip()
+        mime_type = str(file_meta.get("mime_type") or "").strip().lower()
+        display_name = str(file_meta.get("filename") or file_id or "attachment")
+        if not file_id:
+            continue
+
+        file_bytes = _read_attached_file_bytes(file_id)
+        if mime_type.startswith("image/"):
+            encoded = base64.b64encode(file_bytes).decode("ascii")
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                }
+            )
+            continue
+
+        if mime_type == "application/pdf":
+            text = _extract_pdf_text(file_bytes)
+            if text:
+                parts.append(
+                    {
+                        "type": "text",
+                        "text": f"[PDF attachment: {display_name}]\n{text}",
+                    }
+                )
+            else:
+                parts.append(
+                    {
+                        "type": "text",
+                        "text": (
+                            f"[PDF attachment: {display_name}]\n"
+                            "Could not extract text from this PDF."
+                        ),
+                    }
+                )
+
+    if hints:
+        parts.append(
+            {"type": "text", "text": "[Attached context]\n" + "\n".join(hints)}
+        )
+
+    return parts if parts else content
+
+
 def _message_to_openai(msg: AgentMessage) -> dict[str, Any]:
     """Convert a stored :class:`AgentMessage` to the OpenAI message format."""
     role = msg.role.value
@@ -244,31 +439,7 @@ def _message_to_openai(msg: AgentMessage) -> dict[str, Any]:
             out["tool_calls"] = tool_calls
         return out
 
-    # USER role: append attachment hint inline so the LLM sees what the
-    # user picked from the composer chip row.
-    content = msg.content or ""
-    if msg.attachments_json:
-        try:
-            data = json.loads(msg.attachments_json)
-        except Exception:
-            data = None
-        if isinstance(data, dict):
-            recipe_ids = data.get("recipe_ids") or []
-            item_ids = data.get("item_ids") or []
-            hints: list[str] = []
-            if recipe_ids:
-                hints.append(
-                    "Attached recipes (look them up via get_recipe if you need details): "
-                    + ", ".join(str(i) for i in recipe_ids)
-                )
-            if item_ids:
-                hints.append(
-                    "Attached pantry/shopping items (item ids): "
-                    + ", ".join(str(i) for i in item_ids)
-                )
-            if hints:
-                content = content + "\n\n[Attached context]\n" + "\n".join(hints)
-    out["content"] = content
+    out["content"] = _build_user_content(msg)
     return out
 
 
@@ -406,23 +577,26 @@ class RecipeAgent:
         content: str,
         attached_recipe_ids: list[int] | None = None,
         attached_item_ids: list[int] | None = None,
+        attached_file_ids: list[str] | None = None,
     ) -> list[AgentMessage]:
         """Append the user message, run the loop, return the new messages."""
         content = (content or "").strip()
-        if not content:
+        attachments_payload: dict[str, Any] | None = None
+        recipe_ids = [int(i) for i in (attached_recipe_ids or []) if isinstance(i, int)]
+        item_ids = [int(i) for i in (attached_item_ids or []) if isinstance(i, int)]
+        file_attachments = _normalise_attached_files(attached_file_ids)
+        if not content and not recipe_ids and not item_ids and not file_attachments:
             raise InvalidUsage("Message must not be empty")
 
         prior_user_count = sum(
             1 for m in self.chat.messages if m.role == AgentMessageRole.USER
         )
 
-        attachments_payload: dict[str, list[int]] | None = None
-        recipe_ids = [int(i) for i in (attached_recipe_ids or []) if isinstance(i, int)]
-        item_ids = [int(i) for i in (attached_item_ids or []) if isinstance(i, int)]
-        if recipe_ids or item_ids:
+        if recipe_ids or item_ids or file_attachments:
             attachments_payload = {
                 "recipe_ids": recipe_ids,
                 "item_ids": item_ids,
+                "files": file_attachments,
             }
 
         user_msg = AgentMessage(

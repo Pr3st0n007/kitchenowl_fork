@@ -192,6 +192,7 @@ extension AgentApi on ApiService {
     String content, {
     List<int>? attachedRecipeIds,
     List<int>? attachedItemIds,
+    List<String>? attachedFiles,
   }) async {
     final body = <String, dynamic>{'content': content};
     if (attachedRecipeIds != null && attachedRecipeIds.isNotEmpty) {
@@ -199,6 +200,9 @@ extension AgentApi on ApiService {
     }
     if (attachedItemIds != null && attachedItemIds.isNotEmpty) {
       body['attached_item_ids'] = attachedItemIds;
+    }
+    if (attachedFiles != null && attachedFiles.isNotEmpty) {
+      body['attached_files'] = attachedFiles;
     }
     final res = await post(
       '${_agentBase(household)}/chats/$chatId/messages',

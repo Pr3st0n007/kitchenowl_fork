@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:kitchenowl/helpers/named_bytearray.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kitchenowl/models/agent_chat.dart';
 import 'package:kitchenowl/models/agent_undo.dart';
@@ -20,6 +21,7 @@ class AgentChatState extends Equatable {
   // entries fall back to the id.
   final Map<int, String> attachedRecipeNames;
   final Map<int, String> attachedItemNames;
+  final List<NamedByteArray> attachedFiles;
   // Last user message that failed or was cancelled. Kept around so the UI
   // can offer a persistent "Retry" affordance even after the optimistic
   // bubble is rolled back.
@@ -28,6 +30,7 @@ class AgentChatState extends Equatable {
   final List<int> lastFailedItemIds;
   final Map<int, String> lastFailedRecipeNames;
   final Map<int, String> lastFailedItemNames;
+  final List<NamedByteArray> lastFailedFiles;
 
   const AgentChatState({
     this.loading = false,
@@ -41,11 +44,13 @@ class AgentChatState extends Equatable {
     this.attachedItemIds = const [],
     this.attachedRecipeNames = const {},
     this.attachedItemNames = const {},
+    this.attachedFiles = const [],
     this.lastFailedUserMessage,
     this.lastFailedRecipeIds = const [],
     this.lastFailedItemIds = const [],
     this.lastFailedRecipeNames = const {},
     this.lastFailedItemNames = const {},
+    this.lastFailedFiles = const [],
   });
 
   AgentChatState copyWith({
@@ -60,11 +65,13 @@ class AgentChatState extends Equatable {
     List<int>? attachedItemIds,
     Map<int, String>? attachedRecipeNames,
     Map<int, String>? attachedItemNames,
+    List<NamedByteArray>? attachedFiles,
     String? lastFailedUserMessage,
     List<int>? lastFailedRecipeIds,
     List<int>? lastFailedItemIds,
     Map<int, String>? lastFailedRecipeNames,
     Map<int, String>? lastFailedItemNames,
+    List<NamedByteArray>? lastFailedFiles,
     bool clearError = false,
     bool clearRecipe = false,
     bool clearAttachments = false,
@@ -91,6 +98,9 @@ class AgentChatState extends Equatable {
         attachedItemNames: clearAttachments
             ? const {}
             : (attachedItemNames ?? this.attachedItemNames),
+        attachedFiles: clearAttachments
+          ? const []
+          : (attachedFiles ?? this.attachedFiles),
         lastFailedUserMessage: clearLastFailed
             ? null
             : (lastFailedUserMessage ?? this.lastFailedUserMessage),
@@ -106,6 +116,9 @@ class AgentChatState extends Equatable {
         lastFailedItemNames: clearLastFailed
             ? const {}
             : (lastFailedItemNames ?? this.lastFailedItemNames),
+        lastFailedFiles: clearLastFailed
+          ? const []
+          : (lastFailedFiles ?? this.lastFailedFiles),
       );
 
   /// True when the last send was cancelled or failed and a retry is
@@ -125,17 +138,20 @@ class AgentChatState extends Equatable {
         attachedItemIds,
         attachedRecipeNames,
         attachedItemNames,
+        attachedFiles,
         lastFailedUserMessage,
         lastFailedRecipeIds,
         lastFailedItemIds,
         lastFailedRecipeNames,
         lastFailedItemNames,
+        lastFailedFiles,
       ];
 }
 
 class AgentChatCubit extends Cubit<AgentChatState> {
   final Household household;
   final int chatId;
+  List<NamedByteArray> _inFlightFiles = const [];
 
   // Monotonic token incremented on every send. A response whose token does
   // not match [_sendSeq] when it returns is treated as cancelled — its
@@ -164,6 +180,7 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       cards: chat.cards,
       attachedRecipeIds: state.attachedRecipeIds,
       attachedItemIds: state.attachedItemIds,
+      attachedFiles: state.attachedFiles,
     ));
   }
 
@@ -204,6 +221,18 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       attachedItemIds:
           state.attachedItemIds.where((id) => id != itemId).toList(),
       attachedItemNames: names,
+    ));
+  }
+
+  void addAttachedFile(NamedByteArray file) {
+    if (state.attachedFiles.any((f) => f.filename == file.filename)) return;
+    emit(state.copyWith(attachedFiles: [...state.attachedFiles, file]));
+  }
+
+  void removeAttachedFile(String filename) {
+    emit(state.copyWith(
+      attachedFiles:
+          state.attachedFiles.where((f) => f.filename != filename).toList(),
     ));
   }
 
@@ -263,13 +292,18 @@ class AgentChatCubit extends Cubit<AgentChatState> {
   Future<void> sendMessage(String content) async {
     if (state.sending) return;
     final trimmed = content.trim();
-    if (trimmed.isEmpty) return;
-
     final attachedRecipeIds = List<int>.from(state.attachedRecipeIds);
     final attachedItemIds = List<int>.from(state.attachedItemIds);
     final attachedRecipeNames =
         Map<int, String>.from(state.attachedRecipeNames);
     final attachedItemNames = Map<int, String>.from(state.attachedItemNames);
+    final attachedFiles = List<NamedByteArray>.from(state.attachedFiles);
+    if (trimmed.isEmpty &&
+        attachedRecipeIds.isEmpty &&
+        attachedItemIds.isEmpty &&
+        attachedFiles.isEmpty) {
+      return;
+    }
 
     // Optimistically append the user message so the UI reacts instantly.
     final optimistic = AgentMessage(
@@ -278,10 +312,19 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       attachments: AgentMessageAttachments(
         recipeIds: attachedRecipeIds,
         itemIds: attachedItemIds,
+        files: attachedFiles
+            .map(
+              (f) => AgentFileAttachment(
+                id: f.filename,
+                filename: f.filename,
+              ),
+            )
+            .toList(),
       ),
     );
     final mySeq = ++_sendSeq;
     _aborted = false;
+    _inFlightFiles = attachedFiles;
     emit(state.copyWith(
       sending: true,
       messages: [...state.messages, optimistic],
@@ -291,18 +334,58 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       clearLastFailed: true,
     ));
 
+    final uploadedFileIds = <String>[];
+    for (final file in attachedFiles) {
+      if (mySeq != _sendSeq || _aborted || isClosed) {
+        _inFlightFiles = const [];
+        return;
+      }
+      final uploaded = await ApiService.getInstance().uploadBytes(file);
+      if (uploaded == null) {
+        final rolledBack = state.messages.toList()..removeLast();
+        emit(state.copyWith(
+          sending: false,
+          messages: rolledBack,
+          error: 'send_failed',
+          attachedRecipeIds: attachedRecipeIds,
+          attachedItemIds: attachedItemIds,
+          attachedRecipeNames: attachedRecipeNames,
+          attachedItemNames: attachedItemNames,
+          attachedFiles: attachedFiles,
+          lastFailedUserMessage: trimmed,
+          lastFailedRecipeIds: attachedRecipeIds,
+          lastFailedItemIds: attachedItemIds,
+          lastFailedRecipeNames: attachedRecipeNames,
+          lastFailedItemNames: attachedItemNames,
+          lastFailedFiles: attachedFiles,
+        ));
+        _inFlightFiles = const [];
+        return;
+      }
+      uploadedFileIds.add(uploaded);
+    }
+
+    if (mySeq != _sendSeq || _aborted || isClosed) {
+      _inFlightFiles = const [];
+      return;
+    }
+
     final response = await ApiService.getInstance().postAgentMessage(
       household,
       chatId,
       trimmed,
       attachedRecipeIds: attachedRecipeIds.isEmpty ? null : attachedRecipeIds,
       attachedItemIds: attachedItemIds.isEmpty ? null : attachedItemIds,
+      attachedFiles: uploadedFileIds.isEmpty ? null : uploadedFileIds,
     );
 
     // The send was cancelled while the request was in flight: the cubit
     // already rolled the optimistic message back and surfaced
     // ``error: 'cancelled'``. Drop the late response.
-    if (mySeq != _sendSeq || _aborted || isClosed) return;
+    if (mySeq != _sendSeq || _aborted || isClosed) {
+      _inFlightFiles = const [];
+      return;
+    }
 
     if (response == null) {
       // Roll back the optimistic message and report the error. Keep the
@@ -316,12 +399,15 @@ class AgentChatCubit extends Cubit<AgentChatState> {
         attachedItemIds: attachedItemIds,
         attachedRecipeNames: attachedRecipeNames,
         attachedItemNames: attachedItemNames,
+        attachedFiles: attachedFiles,
         lastFailedUserMessage: trimmed,
         lastFailedRecipeIds: attachedRecipeIds,
         lastFailedItemIds: attachedItemIds,
         lastFailedRecipeNames: attachedRecipeNames,
         lastFailedItemNames: attachedItemNames,
+        lastFailedFiles: attachedFiles,
       ));
+      _inFlightFiles = const [];
       return;
     }
 
@@ -336,6 +422,7 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       lastCreatedRecipeId: response.createdRecipeId,
       clearLastFailed: true,
     ));
+    _inFlightFiles = const [];
     // Refresh open cards in case the agent created or closed any.
     await reloadCards();
   }
@@ -354,6 +441,7 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     List<int> failedItems = state.attachedItemIds;
     Map<int, String> failedRecipeNames = state.attachedRecipeNames;
     Map<int, String> failedItemNames = state.attachedItemNames;
+    List<NamedByteArray> failedFiles = _inFlightFiles;
     if (messages.isNotEmpty &&
         messages.last.role == AgentMessageRole.user) {
       final last = messages.removeLast();
@@ -371,7 +459,9 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       lastFailedItemIds: failedItems,
       lastFailedRecipeNames: failedRecipeNames,
       lastFailedItemNames: failedItemNames,
+      lastFailedFiles: failedFiles,
     ));
+    _inFlightFiles = const [];
   }
 
   void clearRecipeNotification() {
@@ -399,7 +489,10 @@ class AgentChatCubit extends Cubit<AgentChatState> {
                 state.messages.last.role == AgentMessageRole.user
             ? state.messages.last.content
             : null);
-    if (text == null || text.isEmpty) return;
+    final hasFailedAttachments = state.lastFailedRecipeIds.isNotEmpty ||
+      state.lastFailedItemIds.isNotEmpty ||
+      state.lastFailedFiles.isNotEmpty;
+    if ((text == null || text.isEmpty) && !hasFailedAttachments) return;
     // Restore the last failed attachments so the retry mirrors the
     // original send 1:1.
     if (state.lastFailedUserMessage != null) {
@@ -408,6 +501,7 @@ class AgentChatCubit extends Cubit<AgentChatState> {
         attachedItemIds: state.lastFailedItemIds,
         attachedRecipeNames: state.lastFailedRecipeNames,
         attachedItemNames: state.lastFailedItemNames,
+        attachedFiles: state.lastFailedFiles,
         clearError: true,
       ));
     } else {
@@ -415,7 +509,7 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       final pruned = state.messages.toList()..removeLast();
       emit(state.copyWith(messages: pruned, clearError: true));
     }
-    await sendMessage(text);
+    await sendMessage(text ?? '');
   }
 
   /// Change the persona attached to this chat. Only allowed before the

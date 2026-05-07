@@ -51,13 +51,18 @@ class PostAgentMessage(Schema):
         unknown = EXCLUDE
 
     content = fields.String(
-        required=True,
-        validate=validate.Length(min=1, max=4000),
+        load_default="",
+        allow_none=True,
+        validate=validate.Length(max=4000),
     )
     # Optional context attachments the user picked from the composer chip
     # row. The agent surfaces these as additional context to the LLM.
     attached_recipe_ids = fields.List(fields.Integer(), load_default=list)
     attached_item_ids = fields.List(fields.Integer(), load_default=list)
+    attached_files = fields.List(
+        fields.String(validate=validate.Length(min=1, max=255)),
+        load_default=list,
+    )
 
 
 _REWIND_ACTIONS = ("rewind", "edit")
