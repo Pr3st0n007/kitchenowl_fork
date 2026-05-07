@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kitchenowl/cubits/agent_chat_list_cubit.dart';
+import 'package:kitchenowl/cubits/auth_cubit.dart';
 import 'package:kitchenowl/cubits/household_cubit.dart';
 import 'package:kitchenowl/helpers/agent_tool_arguments.dart';
 import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/agent_chat.dart';
 import 'package:kitchenowl/models/household.dart';
 import 'package:kitchenowl/pages/agent_settings_page.dart';
+import 'package:kitchenowl/widgets/agent_new_chat_fab.dart';
 import 'package:kitchenowl/widgets/agent_persona_picker.dart';
 
 class AgentChatListPage extends StatelessWidget {
@@ -122,39 +124,63 @@ class AgentChatListPage extends StatelessWidget {
         final cubit = context.read<AgentChatListCubit>();
         final household =
             context.read<HouseholdCubit>().state.household;
+        final isOffline =
+            context.watch<AuthCubit>().state.isOffline;
+        final showFab = state.agentReady && !isOffline;
 
-        if (state.loading && state.chats.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          floatingActionButton: showFab
+              ? AgentNewChatFab(
+                  personaId:
+                      state.filterPersonaId ?? state.userDefaultPersonaId,
+                )
+              : null,
+          body: _buildBody(context, state, cubit, household, loc),
+        );
+      },
+    );
+  }
 
-        if (!state.agentReady) {
-          return SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _settingsActionBar(context, household),
-                Expanded(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        loc.agentNotConfigured,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+  Widget _buildBody(
+    BuildContext context,
+    AgentChatListState state,
+    AgentChatListCubit cubit,
+    Household household,
+    AppLocalizations loc,
+  ) {
+    if (state.loading && state.chats.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (!state.agentReady) {
+      return SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _settingsActionBar(context, household),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    loc.agentNotConfigured,
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              ],
+              ),
             ),
-          );
-        }
+          ],
+        ),
+      );
+    }
 
-        final chats = state.visibleChats;
-        final groupedChats = _groupChatsByDay(chats, DateTime.now());
-        final hasFilter =
-          state.filterPersonaId != null || state.search.trim().isNotEmpty;
+    final chats = state.visibleChats;
+    final groupedChats = _groupChatsByDay(chats, DateTime.now());
+    final hasFilter =
+        state.filterPersonaId != null || state.search.trim().isNotEmpty;
 
-        return SafeArea(
+    return SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -307,8 +333,6 @@ class AgentChatListPage extends StatelessWidget {
             ],
           ),
         );
-      },
-    );
   }
 
   Future<void> _confirmDelete(

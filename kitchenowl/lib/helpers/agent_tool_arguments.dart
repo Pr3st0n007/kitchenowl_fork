@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/agent_chat.dart';
 import 'package:kitchenowl/models/agent_persona.dart';
 
@@ -43,7 +44,13 @@ Map<String, Map<String, dynamic>> buildToolArgumentsIndex(
 /// Falls back to a generic bot icon when [persona] is null or has no icon.
 IconData personaIconFor(AgentPersona? persona) {
   if (persona == null) return Icons.smart_toy_outlined;
-  switch ((persona.icon ?? '').toLowerCase()) {
+  return personaIconForKey(persona.icon);
+}
+
+/// Returns the [IconData] for a persona icon catalog key. Used by the
+/// persona icon picker as well as [personaIconFor].
+IconData personaIconForKey(String? key) {
+  switch ((key ?? '').toLowerCase()) {
     case 'chef':
     case 'edelkoch':
       return Icons.restaurant;
@@ -67,3 +74,35 @@ IconData personaIconFor(AgentPersona? persona) {
       return Icons.person_outline;
   }
 }
+
+/// Catalog entry for a persona icon: a stable [key] persisted in the
+/// backend, the [icon] used to render it, and a localization helper that
+/// returns a human-readable label for the picker UI.
+class AgentPersonaIconChoice {
+  final String key;
+  final IconData icon;
+  final String Function(AppLocalizations loc) label;
+
+  const AgentPersonaIconChoice(this.key, this.icon, this.label);
+}
+
+/// Ordered catalog of icons offered by the persona icon picker. The keys
+/// must match those handled by [personaIconForKey] above.
+const List<AgentPersonaIconChoice> agentPersonaIconCatalog =
+    <AgentPersonaIconChoice>[
+  AgentPersonaIconChoice('default', Icons.person_outline, _labelDefault),
+  AgentPersonaIconChoice('chef', Icons.restaurant, _labelChef),
+  AgentPersonaIconChoice('family', Icons.family_restroom, _labelFamily),
+  AgentPersonaIconChoice('quick', Icons.bolt, _labelQuick),
+  AgentPersonaIconChoice('vegan', Icons.eco_outlined, _labelVegan),
+  AgentPersonaIconChoice('baking', Icons.cake_outlined, _labelBaking),
+  AgentPersonaIconChoice('bot', Icons.smart_toy_outlined, _labelBot),
+];
+
+String _labelDefault(AppLocalizations loc) => loc.agentPersonaIconDefault;
+String _labelChef(AppLocalizations loc) => loc.agentPersonaIconChef;
+String _labelFamily(AppLocalizations loc) => loc.agentPersonaIconFamily;
+String _labelQuick(AppLocalizations loc) => loc.agentPersonaIconQuick;
+String _labelVegan(AppLocalizations loc) => loc.agentPersonaIconVegan;
+String _labelBaking(AppLocalizations loc) => loc.agentPersonaIconBaking;
+String _labelBot(AppLocalizations loc) => loc.agentPersonaIconBot;

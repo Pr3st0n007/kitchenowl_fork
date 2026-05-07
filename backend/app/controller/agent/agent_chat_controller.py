@@ -158,21 +158,33 @@ def delete_chat(household_id, chat_id):
 @validate_args(UpdateAgentChat)
 def update_chat(args, household_id, chat_id):
     """Manual rename. Empty/whitespace title clears the lock so auto-rename
-    can take over again on the next message."""
+    can take over again on the next message.
+
+    Also supports changing the chat's persona, but only while the chat has
+    no user-authored messages yet — switching persona mid-conversation is
+    rejected so prior assistant turns stay consistent with their persona.
+    """
     _require_agent_enabled(household_id)
     chat = _get_owned_chat(household_id, chat_id)
-    if "title" not in args:
-        return jsonify(chat.obj_to_full_dict())
-    raw = args.get("title")
-    new_title = (raw or "").strip() if raw is not None else ""
-    if not new_title:
-        chat.title = None
-        chat.title_locked = False
-        chat.title_auto = True
-    else:
-        chat.title = new_title[:255]
-        chat.title_locked = True
-        chat.title_auto = False
+
+    if "persona_id" in args:
+        if any(m.role == AgentMessageRole.USER for m in chat.messages):
+            raise InvalidUsage("Cannot change persona once the chat has user messages")
+        persona = _resolve_persona_for_create(household_id, args["persona_id"])
+        chat.persona_id = persona.id if persona else None
+
+    if "title" in args:
+        raw = args.get("title")
+        new_title = (raw or "").strip() if raw is not None else ""
+        if not new_title:
+            chat.title = None
+            chat.title_locked = False
+            chat.title_auto = True
+        else:
+            chat.title = new_title[:255]
+            chat.title_locked = True
+            chat.title_auto = False
+
     chat.save()
     return jsonify(chat.obj_to_full_dict())
 

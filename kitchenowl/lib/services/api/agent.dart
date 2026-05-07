@@ -164,6 +164,22 @@ extension AgentApi on ApiService {
     return AgentChat.fromJson(jsonDecode(res.body));
   }
 
+  /// Change the persona attached to a chat. Backend rejects the change
+  /// once any user message exists in the chat. Pass ``null`` to clear the
+  /// persona link.
+  Future<AgentChat?> updateAgentChatPersona(
+    Household household,
+    int chatId,
+    int? personaId,
+  ) async {
+    final res = await patch(
+      '${_agentBase(household)}/chats/$chatId',
+      jsonEncode({'persona_id': personaId}),
+    );
+    if (res.statusCode != 200) return null;
+    return AgentChat.fromJson(jsonDecode(res.body));
+  }
+
   Future<AgentChat?> getAgentChat(Household household, int chatId) async {
     final res = await get('${_agentBase(household)}/chats/$chatId');
     if (res.statusCode != 200) return null;

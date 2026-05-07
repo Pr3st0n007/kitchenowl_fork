@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import 'package:kitchenowl/app.dart';
 import 'package:kitchenowl/cubits/auth_cubit.dart';
 import 'package:kitchenowl/cubits/household_cubit.dart';
 import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/household.dart';
-import 'package:kitchenowl/widgets/agent_new_chat_fab.dart';
 import 'package:kitchenowl/widgets/expense_create_fab.dart';
 import 'package:kitchenowl/widgets/recipe_create_fab.dart';
 import 'package:kitchenowl/widgets/shoppinglist_confirm_remove_fab.dart';
@@ -40,7 +38,7 @@ enum ViewsEnum {
       loc.recipes,
       loc.planner,
       loc.balances,
-      loc.agent,
+      loc.agentShort,
       loc.more,
     ][index];
   }
@@ -111,14 +109,6 @@ enum ViewsEnum {
         return App.settings.shoppingListTapToRemove
             ? null
             : const ShoppingListConfirmRememoveFab();
-      case ViewsEnum.agent:
-        final path = GoRouterState.of(context).uri.path;
-        return !BlocProvider.of<AuthCubit>(context, listen: true)
-                    .state
-                    .isOffline &&
-                path.endsWith('/agent')
-            ? const AgentNewChatFab()
-            : null;
       default:
         return null;
     }

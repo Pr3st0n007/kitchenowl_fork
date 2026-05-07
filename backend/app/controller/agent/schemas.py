@@ -39,6 +39,11 @@ class UpdateAgentChat(Schema):
     # Pass an empty/whitespace string (or ``null``) to clear the manual title
     # and re-enable auto-rename.
     title = fields.String(allow_none=True, validate=validate.Length(max=255))
+    # Change the persona attached to the chat. Only accepted while the chat
+    # has no user-authored messages yet; the controller rejects later
+    # updates so the conversation history stays coherent. ``null`` clears
+    # the persona link.
+    persona_id = fields.Integer(allow_none=True)
 
 
 class PostAgentMessage(Schema):

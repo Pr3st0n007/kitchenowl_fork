@@ -6,8 +6,13 @@ import 'package:kitchenowl/cubits/household_cubit.dart';
 
 /// Floating action button shown on the agent chat list page.
 /// Tapping it creates a new chat and navigates to it.
+///
+/// If [personaId] is provided, the new chat is created for that persona.
+/// Otherwise the cubit falls back to the user's / household defaults.
 class AgentNewChatFab extends StatelessWidget {
-  const AgentNewChatFab({super.key});
+  final int? personaId;
+
+  const AgentNewChatFab({super.key, this.personaId});
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +27,7 @@ class AgentNewChatFab extends StatelessWidget {
     final household =
         context.read<HouseholdCubit>().state.household;
     final cubit = context.read<AgentChatListCubit>();
-    final chatId = await cubit.createChat();
+    final chatId = await cubit.createChat(personaId: personaId);
     if (chatId == null || !context.mounted) return;
     context.push(
       '/household/${household.id}/agent/$chatId',

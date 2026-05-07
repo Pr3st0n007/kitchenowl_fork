@@ -37,9 +37,12 @@ class _AgentChatPageState extends State<AgentChatPage> {
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   bool _showJumpToBottom = false;
+  int _smallScreenTab = 0;
 
   // Width of the right-side recipe panel on wide layouts. Adjustable via
   // the vertical drag handle between the chat and the panel.
+  static const double _kWideLayoutMinWidth = 1000;
+  static const double _kChatMinWidth = 460;
   static const double _kPanelMinWidth = 280;
   static const double _kPanelMaxWidth = 640;
   static const double _kPanelDefaultWidth = 380;
@@ -184,6 +187,76 @@ class _AgentChatPageState extends State<AgentChatPage> {
     return null;
   }
 
+  Future<void> _showPersonaPicker(
+    BuildContext context,
+    AgentPersona? current,
+  ) async {
+    final loc = AppLocalizations.of(context)!;
+    final listState = context.read<AgentChatListCubit?>()?.state;
+    final personas = listState?.personas ?? const <AgentPersona>[];
+    var wasPicked = false;
+    final selected = await showModalBottomSheet<AgentPersona?>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  loc.agentChoosePersona,
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.person_off_outlined),
+                      ),
+                      title: Text(loc.agentUseDefault),
+                      selected: current == null,
+                      onTap: () {
+                        wasPicked = true;
+                        Navigator.of(ctx).pop(null);
+                      },
+                    ),
+                    for (final p in personas)
+                      ListTile(
+                        leading: CircleAvatar(child: Icon(personaIconFor(p))),
+                        title: Text(p.name),
+                        selected: current?.id == p.id,
+                        onTap: () {
+                          wasPicked = true;
+                          Navigator.of(ctx).pop(p);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!context.mounted || !wasPicked) return;
+    if (selected?.id == current?.id) return;
+    final ok = await _cubit.changePersona(selected?.id);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(loc.error)),
+      );
+      return;
+    }
+    context.read<AgentChatListCubit?>()?.refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
@@ -228,18 +301,14 @@ class _AgentChatPageState extends State<AgentChatPage> {
                 ),
               ),
               actions: [
-                if (persona != null)
+                if (persona != null || isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: Center(
-                      child: Chip(
-                        avatar: Icon(personaIconFor(persona), size: 18),
-                        label: Text(
-                          persona.name,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
+                      child: _PersonaChip(
+                        persona: persona,
+                        canChange: isEmpty,
+                        onTap: () => _showPersonaPicker(context, persona),
                       ),
                     ),
                   ),
@@ -247,26 +316,37 @@ class _AgentChatPageState extends State<AgentChatPage> {
             ),
             body: SafeArea(
               child: LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 900;
+                final wide = constraints.maxWidth >= _kWideLayoutMinWidth;
                 final chatColumn = Column(
                   children: [
-                    if (state.error != null)
+                    if (state.canRetryLast || state.error != null)
                       Material(
-                      color: Theme.of(context).colorScheme.errorContainer,
+                      color: state.error == 'cancelled'
+                          ? Theme.of(context).colorScheme.surfaceContainerHighest
+                          : Theme.of(context).colorScheme.errorContainer,
                       child: ListTile(
                         leading: Icon(
-                          Icons.error_outline,
-                          color: Theme.of(context).colorScheme.onErrorContainer,
+                          state.error == 'cancelled'
+                              ? Icons.stop_circle_outlined
+                              : Icons.error_outline,
+                          color: state.error == 'cancelled'
+                              ? Theme.of(context).colorScheme.onSurface
+                              : Theme.of(context).colorScheme.onErrorContainer,
                         ),
                         title: Text(
-                          loc.agentSendFailed,
+                          state.error == 'cancelled'
+                              ? loc.agentSendCancelled
+                              : loc.agentSendFailed,
                           style: TextStyle(
-                            color:
-                                Theme.of(context).colorScheme.onErrorContainer,
+                            color: state.error == 'cancelled'
+                                ? Theme.of(context).colorScheme.onSurface
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer,
                           ),
                         ),
                         trailing: TextButton(
-                          onPressed: state.sending
+                          onPressed: state.sending || !state.canRetryLast
                               ? null
                               : () async {
                                   await _cubit.retryLastUserMessage();
@@ -346,6 +426,7 @@ class _AgentChatPageState extends State<AgentChatPage> {
                     controller: _inputCtrl,
                     sending: state.sending,
                     onSubmit: _send,
+                    onCancel: _cubit.cancelSend,
                     hint: loc.agentInputHint,
                     attachedRecipeIds: state.attachedRecipeIds,
                     attachedItemIds: state.attachedItemIds,
@@ -358,9 +439,54 @@ class _AgentChatPageState extends State<AgentChatPage> {
                   ),
                 ],
               );
-                if (!wide) return chatColumn;
-                final maxPanelWidth =
-                    (constraints.maxWidth - 360).clamp(_kPanelMinWidth, _kPanelMaxWidth);
+                final recipePanel = _AgentCardsPanel(
+                  cards: state.cards,
+                  household: widget.household,
+                  onClose: _cubit.closeCard,
+                  onAttachExisting: _attachExistingRecipeFromCollection,
+                  onSetGroup: (cardId, label) =>
+                      _cubit.setCardGroup(cardId, label),
+                );
+                if (!wide) {
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                        child: SegmentedButton<int>(
+                          showSelectedIcon: false,
+                          segments: [
+                            ButtonSegment<int>(
+                              value: 0,
+                              icon: const Icon(Icons.chat_bubble_outline),
+                              label: Text(loc.agentChat),
+                            ),
+                            ButtonSegment<int>(
+                              value: 1,
+                              icon: const Icon(Icons.push_pin_outlined),
+                              label: Text(loc.agentRecipePanel),
+                            ),
+                          ],
+                          selected: {_smallScreenTab},
+                          onSelectionChanged: (selected) {
+                            setState(() => _smallScreenTab = selected.first);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Expanded(
+                        child: IndexedStack(
+                          index: _smallScreenTab,
+                          children: [
+                            chatColumn,
+                            recipePanel,
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                final maxPanelWidth = (constraints.maxWidth - _kChatMinWidth)
+                    .clamp(_kPanelMinWidth, _kPanelMaxWidth);
                 final clampedPanelWidth =
                     _panelWidth.clamp(_kPanelMinWidth, maxPanelWidth);
                 return Row(
@@ -378,14 +504,7 @@ class _AgentChatPageState extends State<AgentChatPage> {
                     ),
                     SizedBox(
                       width: clampedPanelWidth,
-                      child: _AgentCardsPanel(
-                        cards: state.cards,
-                        household: widget.household,
-                        onClose: _cubit.closeCard,
-                        onAttachExisting: _attachExistingRecipeFromCollection,
-                        onSetGroup: (cardId, label) =>
-                            _cubit.setCardGroup(cardId, label),
-                      ),
+                      child: recipePanel,
                     ),
                   ],
                 );
@@ -483,6 +602,51 @@ class _AssistantTypingBubble extends StatelessWidget {
   }
 }
 
+/// AppBar action chip showing the chat's persona. While the chat is empty
+/// (``canChange == true``) it acts as a button that opens the persona
+/// picker; once the conversation has started it becomes a static label.
+class _PersonaChip extends StatelessWidget {
+  final AgentPersona? persona;
+  final bool canChange;
+  final VoidCallback onTap;
+
+  const _PersonaChip({
+    required this.persona,
+    required this.canChange,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    final label = persona?.name ?? loc.agentUseDefault;
+    final icon = personaIconFor(persona);
+    if (!canChange) {
+      return Chip(
+        avatar: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      );
+    }
+    return ActionChip(
+      avatar: Icon(icon, size: 18),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 4),
+          const Icon(Icons.expand_more, size: 16),
+        ],
+      ),
+      tooltip: loc.agentChoosePersona,
+      onPressed: onTap,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   final AgentMessage message;
   final Household household;
@@ -522,6 +686,28 @@ class _MessageBubble extends StatelessWidget {
     final h = local.hour.toString().padLeft(2, '0');
     final m = local.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  List<int> _openRecipeIds() {
+    final ids = <int>{};
+    if (message.createdRecipeId != null) {
+      ids.add(message.createdRecipeId!);
+    }
+    ids.addAll(message.attachments.recipeIds);
+    return ids.toList(growable: false);
+  }
+
+  void _openRecipe(BuildContext context, int recipeId) {
+    final fallbackName = message.content?.trim().isNotEmpty == true
+        ? message.content!.trim().split('\n').first
+        : 'Recipe';
+    context.push(
+      '/household/${household.id}/recipes/details/$recipeId',
+      extra: Tuple2(
+        household,
+        Recipe(id: recipeId, name: fallbackName),
+      ),
+    );
   }
 
   Future<void> _runEdit(
@@ -597,10 +783,12 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final isUser = message.role == AgentMessageRole.user;
     final isTool = message.role == AgentMessageRole.tool;
     final isAssistant = message.role == AgentMessageRole.assistant;
+    final openRecipeIds = _openRecipeIds();
 
     if (isTool) {
       return Padding(
@@ -611,6 +799,7 @@ class _MessageBubble extends StatelessWidget {
           arguments: message.toolCallId == null
               ? null
               : argumentsByToolCallId[message.toolCallId!],
+          onOpenRecipe: (recipeId) => _openRecipe(context, recipeId),
         ),
       );
     }
@@ -635,7 +824,9 @@ class _MessageBubble extends StatelessWidget {
       content = extracted.$1;
       suggestions = extracted.$2;
     }
-    if (content.isEmpty && suggestions.isEmpty) return const SizedBox.shrink();
+    if (content.isEmpty && suggestions.isEmpty && openRecipeIds.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     final time = message.createdAt;
     final messageId = message.id;
@@ -713,6 +904,22 @@ class _MessageBubble extends StatelessWidget {
                         onPressed: onSuggestionTap == null
                             ? null
                             : () => onSuggestionTap!(s),
+                      ),
+                  ],
+                ),
+              ),
+            if (!isUser && openRecipeIds.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final recipeId in openRecipeIds)
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.menu_book_outlined, size: 16),
+                        label: Text(loc.agentOpenRecipe),
+                        onPressed: () => _openRecipe(context, recipeId),
                       ),
                   ],
                 ),
@@ -959,6 +1166,7 @@ class _Composer extends StatelessWidget {
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSubmit;
+  final VoidCallback? onCancel;
   final String hint;
   final List<int> attachedRecipeIds;
   final List<int> attachedItemIds;
@@ -973,6 +1181,7 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.onSubmit,
+    this.onCancel,
     required this.hint,
     required this.attachedRecipeIds,
     required this.attachedItemIds,
@@ -1076,14 +1285,13 @@ class _Composer extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               IconButton.filled(
+                tooltip: sending ? loc.cancel : null,
                 icon: sending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const Icon(Icons.stop_rounded)
                     : const Icon(Icons.send_rounded),
-                onPressed: sending ? null : onSubmit,
+                onPressed: sending
+                    ? (onCancel ?? () {})
+                    : onSubmit,
               ),
             ],
           ),

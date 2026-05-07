@@ -125,9 +125,9 @@ class _PersonaDialog extends StatefulWidget {
 
 class _PersonaDialogState extends State<_PersonaDialog> {
   late final TextEditingController _nameCtrl;
-  late final TextEditingController _iconCtrl;
   late final TextEditingController _greetingCtrl;
   late final TextEditingController _promptCtrl;
+  String? _selectedIconKey;
   bool _saving = false;
 
   @override
@@ -135,15 +135,37 @@ class _PersonaDialogState extends State<_PersonaDialog> {
     super.initState();
     final e = widget.existing;
     _nameCtrl = TextEditingController(text: e?.name ?? '');
-    _iconCtrl = TextEditingController(text: e?.icon ?? '');
+    _selectedIconKey = _normalizeIconKey(e?.icon);
     _greetingCtrl = TextEditingController(text: e?.initialGreeting ?? '');
     _promptCtrl = TextEditingController(text: e?.systemPrompt ?? '');
+  }
+
+  /// Map any persisted icon string onto a key from
+  /// [agentPersonaIconCatalog]. Returns ``null`` if the persona has no
+  /// icon stored, falls back to ``'default'`` for unknown values so the
+  /// picker still shows a selection.
+  String? _normalizeIconKey(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final lower = raw.trim().toLowerCase();
+    for (final c in agentPersonaIconCatalog) {
+      if (c.key == lower) return c.key;
+    }
+    // Aliases handled by personaIconForKey but not in the catalog.
+    const aliases = <String, String>{
+      'edelkoch': 'chef',
+      'familie': 'family',
+      'schnell': 'quick',
+      'vegetarian': 'vegan',
+      'eco': 'vegan',
+      'dessert': 'baking',
+      'robot': 'bot',
+    };
+    return aliases[lower] ?? 'default';
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _iconCtrl.dispose();
     _greetingCtrl.dispose();
     _promptCtrl.dispose();
     super.dispose();
@@ -154,12 +176,16 @@ class _PersonaDialogState extends State<_PersonaDialog> {
     if (name.isEmpty) return;
     setState(() => _saving = true);
     final api = ApiService.getInstance();
+    final iconKey =
+        _selectedIconKey == null || _selectedIconKey == 'default'
+            ? null
+            : _selectedIconKey;
     if (widget.existing == null) {
       await api.createAgentPersona(
         widget.household,
         name: name,
         scope: AgentPersonaScope.global,
-        icon: _iconCtrl.text.trim().isEmpty ? null : _iconCtrl.text.trim(),
+        icon: iconKey,
         initialGreeting: _greetingCtrl.text.trim().isEmpty
             ? null
             : _greetingCtrl.text.trim(),
@@ -171,7 +197,7 @@ class _PersonaDialogState extends State<_PersonaDialog> {
         widget.household,
         widget.existing!.id,
         name: name,
-        icon: _iconCtrl.text.trim().isEmpty ? null : _iconCtrl.text.trim(),
+        icon: iconKey,
         initialGreeting: _greetingCtrl.text.trim().isEmpty
             ? null
             : _greetingCtrl.text.trim(),
@@ -187,27 +213,50 @@ class _PersonaDialogState extends State<_PersonaDialog> {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final isNew = widget.existing == null;
+    final theme = Theme.of(context);
 
     return AlertDialog(
       title: Text(isNew ? loc.agentPersonaNew : loc.agentPersonaEdit),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
               controller: _nameCtrl,
               autofocus: true,
               decoration: InputDecoration(labelText: loc.agentPersonaName),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _iconCtrl,
-              decoration: InputDecoration(
-                labelText: loc.agentPersonaIcon,
-                hintText: 'chef / family / quick / vegan / ...',
-              ),
+            const SizedBox(height: 16),
+            Text(
+              loc.agentPersonaIcon,
+              style: theme.textTheme.labelLarge,
             ),
             const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final choice in agentPersonaIconCatalog)
+                  ChoiceChip(
+                    avatar: Icon(
+                      choice.icon,
+                      size: 18,
+                      color: _selectedIconKey == choice.key
+                          ? theme.colorScheme.onSecondaryContainer
+                          : theme.iconTheme.color,
+                    ),
+                    label: Text(choice.label(loc)),
+                    selected: _selectedIconKey == choice.key,
+                    onSelected: (sel) {
+                      setState(() {
+                        _selectedIconKey = sel ? choice.key : null;
+                      });
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _greetingCtrl,
               decoration: InputDecoration(labelText: loc.agentInitialGreeting),

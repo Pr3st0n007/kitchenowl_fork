@@ -20,6 +20,14 @@ class AgentChatState extends Equatable {
   // entries fall back to the id.
   final Map<int, String> attachedRecipeNames;
   final Map<int, String> attachedItemNames;
+  // Last user message that failed or was cancelled. Kept around so the UI
+  // can offer a persistent "Retry" affordance even after the optimistic
+  // bubble is rolled back.
+  final String? lastFailedUserMessage;
+  final List<int> lastFailedRecipeIds;
+  final List<int> lastFailedItemIds;
+  final Map<int, String> lastFailedRecipeNames;
+  final Map<int, String> lastFailedItemNames;
 
   const AgentChatState({
     this.loading = false,
@@ -33,6 +41,11 @@ class AgentChatState extends Equatable {
     this.attachedItemIds = const [],
     this.attachedRecipeNames = const {},
     this.attachedItemNames = const {},
+    this.lastFailedUserMessage,
+    this.lastFailedRecipeIds = const [],
+    this.lastFailedItemIds = const [],
+    this.lastFailedRecipeNames = const {},
+    this.lastFailedItemNames = const {},
   });
 
   AgentChatState copyWith({
@@ -47,9 +60,15 @@ class AgentChatState extends Equatable {
     List<int>? attachedItemIds,
     Map<int, String>? attachedRecipeNames,
     Map<int, String>? attachedItemNames,
+    String? lastFailedUserMessage,
+    List<int>? lastFailedRecipeIds,
+    List<int>? lastFailedItemIds,
+    Map<int, String>? lastFailedRecipeNames,
+    Map<int, String>? lastFailedItemNames,
     bool clearError = false,
     bool clearRecipe = false,
     bool clearAttachments = false,
+    bool clearLastFailed = false,
   }) =>
       AgentChatState(
         loading: loading ?? this.loading,
@@ -72,7 +91,26 @@ class AgentChatState extends Equatable {
         attachedItemNames: clearAttachments
             ? const {}
             : (attachedItemNames ?? this.attachedItemNames),
+        lastFailedUserMessage: clearLastFailed
+            ? null
+            : (lastFailedUserMessage ?? this.lastFailedUserMessage),
+        lastFailedRecipeIds: clearLastFailed
+            ? const []
+            : (lastFailedRecipeIds ?? this.lastFailedRecipeIds),
+        lastFailedItemIds: clearLastFailed
+            ? const []
+            : (lastFailedItemIds ?? this.lastFailedItemIds),
+        lastFailedRecipeNames: clearLastFailed
+            ? const {}
+            : (lastFailedRecipeNames ?? this.lastFailedRecipeNames),
+        lastFailedItemNames: clearLastFailed
+            ? const {}
+            : (lastFailedItemNames ?? this.lastFailedItemNames),
       );
+
+  /// True when the last send was cancelled or failed and a retry is
+  /// available.
+  bool get canRetryLast => !sending && lastFailedUserMessage != null;
 
   @override
   List<Object?> get props => [
@@ -87,12 +125,26 @@ class AgentChatState extends Equatable {
         attachedItemIds,
         attachedRecipeNames,
         attachedItemNames,
+        lastFailedUserMessage,
+        lastFailedRecipeIds,
+        lastFailedItemIds,
+        lastFailedRecipeNames,
+        lastFailedItemNames,
       ];
 }
 
 class AgentChatCubit extends Cubit<AgentChatState> {
   final Household household;
   final int chatId;
+
+  // Monotonic token incremented on every send. A response whose token does
+  // not match [_sendSeq] when it returns is treated as cancelled — its
+  // result is dropped on the floor. Combined with [_aborted] this gives us
+  // a best-effort client-side cancel: the in-flight HTTP request still
+  // completes server-side (no real abort wire), but the UI immediately
+  // returns to an idle state.
+  int _sendSeq = 0;
+  bool _aborted = false;
 
   AgentChatCubit(this.household, this.chatId) : super(const AgentChatState()) {
     refresh();
@@ -215,6 +267,9 @@ class AgentChatCubit extends Cubit<AgentChatState> {
 
     final attachedRecipeIds = List<int>.from(state.attachedRecipeIds);
     final attachedItemIds = List<int>.from(state.attachedItemIds);
+    final attachedRecipeNames =
+        Map<int, String>.from(state.attachedRecipeNames);
+    final attachedItemNames = Map<int, String>.from(state.attachedItemNames);
 
     // Optimistically append the user message so the UI reacts instantly.
     final optimistic = AgentMessage(
@@ -225,12 +280,15 @@ class AgentChatCubit extends Cubit<AgentChatState> {
         itemIds: attachedItemIds,
       ),
     );
+    final mySeq = ++_sendSeq;
+    _aborted = false;
     emit(state.copyWith(
       sending: true,
       messages: [...state.messages, optimistic],
       clearError: true,
       clearRecipe: true,
       clearAttachments: true,
+      clearLastFailed: true,
     ));
 
     final response = await ApiService.getInstance().postAgentMessage(
@@ -240,8 +298,15 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       attachedRecipeIds: attachedRecipeIds.isEmpty ? null : attachedRecipeIds,
       attachedItemIds: attachedItemIds.isEmpty ? null : attachedItemIds,
     );
+
+    // The send was cancelled while the request was in flight: the cubit
+    // already rolled the optimistic message back and surfaced
+    // ``error: 'cancelled'``. Drop the late response.
+    if (mySeq != _sendSeq || _aborted || isClosed) return;
+
     if (response == null) {
-      // Roll back the optimistic message and report the error.
+      // Roll back the optimistic message and report the error. Keep the
+      // attachments and message text around so the UI can offer a retry.
       final rolledBack = state.messages.toList()..removeLast();
       emit(state.copyWith(
         sending: false,
@@ -249,6 +314,13 @@ class AgentChatCubit extends Cubit<AgentChatState> {
         error: 'send_failed',
         attachedRecipeIds: attachedRecipeIds,
         attachedItemIds: attachedItemIds,
+        attachedRecipeNames: attachedRecipeNames,
+        attachedItemNames: attachedItemNames,
+        lastFailedUserMessage: trimmed,
+        lastFailedRecipeIds: attachedRecipeIds,
+        lastFailedItemIds: attachedItemIds,
+        lastFailedRecipeNames: attachedRecipeNames,
+        lastFailedItemNames: attachedItemNames,
       ));
       return;
     }
@@ -262,9 +334,44 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       chat: response.chat,
       messages: combined,
       lastCreatedRecipeId: response.createdRecipeId,
+      clearLastFailed: true,
     ));
     // Refresh open cards in case the agent created or closed any.
     await reloadCards();
+  }
+
+  /// Cancel an in-flight send. Rolls back the optimistic user message and
+  /// surfaces a ``'cancelled'`` error so the UI can offer a retry. The
+  /// underlying HTTP request is *not* aborted on the wire; its eventual
+  /// result is dropped client-side via the [_sendSeq] token.
+  void cancelSend() {
+    if (!state.sending) return;
+    _aborted = true;
+    _sendSeq++;
+    final messages = state.messages.toList();
+    String? failedText;
+    List<int> failedRecipes = state.attachedRecipeIds;
+    List<int> failedItems = state.attachedItemIds;
+    Map<int, String> failedRecipeNames = state.attachedRecipeNames;
+    Map<int, String> failedItemNames = state.attachedItemNames;
+    if (messages.isNotEmpty &&
+        messages.last.role == AgentMessageRole.user) {
+      final last = messages.removeLast();
+      failedText = last.content;
+      final att = last.attachments;
+      failedRecipes = att.recipeIds;
+      failedItems = att.itemIds;
+    }
+    emit(state.copyWith(
+      sending: false,
+      messages: messages,
+      error: 'cancelled',
+      lastFailedUserMessage: failedText,
+      lastFailedRecipeIds: failedRecipes,
+      lastFailedItemIds: failedItems,
+      lastFailedRecipeNames: failedRecipeNames,
+      lastFailedItemNames: failedItemNames,
+    ));
   }
 
   void clearRecipeNotification() {
@@ -280,19 +387,52 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     return true;
   }
 
-  /// Retry the most recent failed user message. No-op if no error / no msg.
+  /// Retry the most recent failed/cancelled user message. No-op if there
+  /// isn't one (or a send is already in flight).
   Future<void> retryLastUserMessage() async {
-    if (state.error == null) return;
-    final lastUser = state.messages.lastWhere(
-      (m) => m.role == AgentMessageRole.user,
-      orElse: () => const AgentMessage(role: AgentMessageRole.user),
+    if (state.sending) return;
+    final text = state.lastFailedUserMessage ??
+        // Backwards compatibility for the older 'send_failed' path that
+        // didn't populate lastFailedUserMessage: peek at the trailing
+        // user message instead.
+        (state.error != null && state.messages.isNotEmpty &&
+                state.messages.last.role == AgentMessageRole.user
+            ? state.messages.last.content
+            : null);
+    if (text == null || text.isEmpty) return;
+    // Restore the last failed attachments so the retry mirrors the
+    // original send 1:1.
+    if (state.lastFailedUserMessage != null) {
+      emit(state.copyWith(
+        attachedRecipeIds: state.lastFailedRecipeIds,
+        attachedItemIds: state.lastFailedItemIds,
+        attachedRecipeNames: state.lastFailedRecipeNames,
+        attachedItemNames: state.lastFailedItemNames,
+        clearError: true,
+      ));
+    } else {
+      // Drop the prior failed-user bubble so the retry doesn't duplicate.
+      final pruned = state.messages.toList()..removeLast();
+      emit(state.copyWith(messages: pruned, clearError: true));
+    }
+    await sendMessage(text);
+  }
+
+  /// Change the persona attached to this chat. Only allowed before the
+  /// first user message has been sent — the backend rejects later
+  /// changes. Returns ``true`` on success.
+  Future<bool> changePersona(int? personaId) async {
+    final hasUserMessages =
+        state.messages.any((m) => m.role == AgentMessageRole.user);
+    if (hasUserMessages) return false;
+    final updated = await ApiService.getInstance().updateAgentChatPersona(
+      household,
+      chatId,
+      personaId,
     );
-    final content = lastUser.content;
-    if (content == null || content.isEmpty) return;
-    // Drop the failed-user message before resending so we don't duplicate.
-    final pruned = state.messages.toList()..remove(lastUser);
-    emit(state.copyWith(messages: pruned, clearError: true));
-    await sendMessage(content);
+    if (updated == null) return false;
+    emit(state.copyWith(chat: updated));
+    return true;
   }
 
   // ----------------------------------------------- rewind / edit / regenerate

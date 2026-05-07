@@ -269,15 +269,32 @@ class _HouseholdPageState extends State<HouseholdPage>
                     builder: (context, state) {
                       // Reserve the last bottom-nav slot for "more" when
                       // there are more active views than slots, so the
-                      // overflow remains reachable.
-                      final List<ViewsEnum> navPages = pages.length > 5
-                          ? [
-                              ...pages
-                                  .where((e) => e != ViewsEnum.more)
-                                  .take(4),
-                              ViewsEnum.more,
-                            ]
-                          : pages;
+                      // overflow remains reachable. Always keep the
+                      // currently selected page visible — otherwise it
+                      // would silently fall out of the bar (e.g. agent
+                      // when balances is also active).
+                      const maxPrimaryDestinations = 5;
+                      List<ViewsEnum> navPages;
+                      if (pages.length > maxPrimaryDestinations + 1) {
+                        final selected = pages[_selectedIndex];
+                        final candidates = pages
+                            .where((e) => e != ViewsEnum.more)
+                            .toList();
+                        var primary =
+                            candidates.take(maxPrimaryDestinations).toList();
+                        if (selected != ViewsEnum.more &&
+                            !primary.contains(selected)) {
+                          // Drop the last non-selected entry to make room
+                          // for the active view, preserving order.
+                          primary = [
+                            ...primary.take(maxPrimaryDestinations - 1),
+                            selected
+                          ];
+                        }
+                        navPages = [...primary, ViewsEnum.more];
+                      } else {
+                        navPages = pages;
+                      }
                       int navSelectedIndex = navPages.indexOf(
                         pages[_selectedIndex],
                       );

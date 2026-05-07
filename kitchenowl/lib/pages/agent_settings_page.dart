@@ -241,7 +241,9 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                         padding: const EdgeInsets.all(12),
                         child: Text(
                           state.testOk == true
-                              ? '${loc.agentTestOk}: ${state.testMessage}'
+                              ? (state.testMessage == 'ok'
+                                  ? loc.agentTestOk
+                                  : '${loc.agentTestOk}: ${state.testMessage}')
                               : '${loc.agentTestFailed}: ${state.testMessage}',
                         ),
                       ),
