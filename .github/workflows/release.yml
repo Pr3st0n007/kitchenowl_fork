@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: release-${{ inputs.branch }}-${{ inputs.release_channel }}
@@ -60,16 +61,26 @@ jobs:
         shell: bash
         run: |
           raw_version="$(sed -n 's/^version:[[:space:]]*//p' kitchenowl/pubspec.yaml | head -n1)"
+          raw_version="${raw_version%$'\r'}"
 
-          if [[ ! "$raw_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+          version_name_part="${raw_version%%+*}"
+          build_part="${raw_version#*+}"
+
+          if [[ -z "$version_name_part" || "$build_part" == "$raw_version" ]]; then
             echo "Unsupported pubspec version format: $raw_version" >&2
             exit 1
           fi
 
-          major="${BASH_REMATCH[1]}"
-          minor="${BASH_REMATCH[2]}"
-          patch="${BASH_REMATCH[3]}"
-          build="${BASH_REMATCH[4]}"
+          IFS='.' read -r major minor patch <<< "$version_name_part"
+          build="$build_part"
+
+          for part_name in major minor patch build; do
+            part_value="${!part_name}"
+            if [[ -z "$part_value" || ! "$part_value" =~ ^[0-9]+$ ]]; then
+              echo "Unsupported pubspec version format: $raw_version" >&2
+              exit 1
+            fi
+          done
 
           case "${{ inputs.release_kind }}" in
             major)
@@ -118,6 +129,7 @@ jobs:
           sed -i "s/^version: .*/version: ${{ steps.version.outputs.pubspec_version }}/" kitchenowl/pubspec.yaml
 
       - name: Commit and push version bump
+        id: version_bump
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -125,18 +137,17 @@ jobs:
           git add kitchenowl/pubspec.yaml
           git commit -m "chore: bump version to ${{ steps.version.outputs.version_name }}"
           git push origin "HEAD:${{ inputs.branch }}"
+          echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Determine changelog range
         id: changelog_range
         shell: bash
         run: |
           if [[ "${{ inputs.release_channel }}" == "beta" ]]; then
-            tag_pattern="refs/tags/beta-v*"
+            previous_tag="$(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags/v* refs/tags/beta-v* | head -n1)"
           else
-            tag_pattern="refs/tags/v*"
+            previous_tag="$(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags/v* | head -n1)"
           fi
-
-          previous_tag="$(git for-each-ref --sort=-creatordate --format='%(refname:short)' "$tag_pattern" | head -n1)"
 
           if [[ -n "$previous_tag" ]]; then
             echo "has_previous_tag=true" >> "$GITHUB_OUTPUT"
@@ -152,7 +163,7 @@ jobs:
         with:
           configuration: "changelog_configuration.json"
           fromTag: ${{ steps.changelog_range.outputs.from_tag }}
-          toTag: HEAD
+          toTag: ${{ steps.version_bump.outputs.head_sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build initial release notes
