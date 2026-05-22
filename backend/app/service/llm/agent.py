@@ -273,13 +273,20 @@ def _normalise_attached_files(
             continue
 
         created_at = getattr(f, "created_at", None)
+        # Match the rest of the API: serialize as UTC milliseconds since
+        # epoch so the Flutter client (and ``KitchenOwlJSONProvider``)
+        # treat the value consistently as a tz-aware instant.
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
         files.append(
             {
                 "id": f.filename,
                 "filename": f.filename,
                 "mime_type": mime_type,
                 "size": size,
-                "uploaded_at": created_at.isoformat() if created_at else None,
+                "uploaded_at": int(round(created_at.timestamp() * 1000))
+                if created_at
+                else None,
             }
         )
 

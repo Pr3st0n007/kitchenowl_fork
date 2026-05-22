@@ -1,6 +1,33 @@
 import 'package:equatable/equatable.dart';
 import 'package:kitchenowl/models/model.dart';
 
+/// Parses a JSON datetime field that the backend serializes as UTC
+/// milliseconds since epoch (see ``KitchenOwlJSONProvider``). Falls back
+/// to ``DateTime.tryParse`` when an older backend still sends an ISO
+/// string. The result is always tz-aware UTC, so callers can safely
+/// ``.toLocal()`` for display.
+DateTime? _parseUtcDateTime(dynamic raw) {
+  if (raw == null) return null;
+  if (raw is int) {
+    return DateTime.fromMillisecondsSinceEpoch(raw, isUtc: true);
+  }
+  if (raw is double) {
+    return DateTime.fromMillisecondsSinceEpoch(raw.round(), isUtc: true);
+  }
+  if (raw is String) {
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return null;
+    // ``DateTime.tryParse`` treats a string without a tz suffix as local
+    // time. The server sends UTC, so reinterpret naive results as UTC.
+    return parsed.isUtc ? parsed : DateTime.utc(
+      parsed.year, parsed.month, parsed.day,
+      parsed.hour, parsed.minute, parsed.second, parsed.millisecond,
+      parsed.microsecond,
+    );
+  }
+  return null;
+}
+
 class AgentFileAttachment extends Equatable {
   final String id;
   final String filename;
@@ -17,11 +44,7 @@ class AgentFileAttachment extends Equatable {
   });
 
   factory AgentFileAttachment.fromJson(Map<String, dynamic> map) {
-    DateTime? uploadedAt;
-    final rawUploadedAt = map['uploaded_at'];
-    if (rawUploadedAt is String) {
-      uploadedAt = DateTime.tryParse(rawUploadedAt);
-    }
+    final uploadedAt = _parseUtcDateTime(map['uploaded_at']);
 
     return AgentFileAttachment(
       id: (map['id'] as String?) ?? '',
@@ -134,11 +157,7 @@ class AgentMessage extends Model {
   });
 
   factory AgentMessage.fromJson(Map<String, dynamic> map) {
-    DateTime? parsed;
-    final created = map['created_at'];
-    if (created is String) {
-      parsed = DateTime.tryParse(created);
-    }
+    final parsed = _parseUtcDateTime(map['created_at']);
     return AgentMessage(
       id: map['id'],
       chatId: map['chat_id'],
@@ -276,6 +295,7 @@ class AgentChat extends Model {
   final int messageCount;
   final String? lastUserMessage;
   final DateTime? updatedAt;
+  final DateTime? lastMessageAt;
   final List<AgentMessage> messages;
   final List<AgentRecipeCard> cards;
 
@@ -290,19 +310,21 @@ class AgentChat extends Model {
     this.messageCount = 0,
     this.lastUserMessage,
     this.updatedAt,
+    this.lastMessageAt,
     this.messages = const [],
     this.cards = const [],
   });
 
+  /// Timestamp shown in the chat list. Prefers the timestamp of the most
+  /// recent message so renames / persona changes do not visually "bump"
+  /// every chat to the same time. Falls back to the chat row's
+  /// ``updated_at`` when the server did not provide one (older backend).
+  DateTime? get displayTimestamp => lastMessageAt ?? updatedAt;
+
   factory AgentChat.fromJson(Map<String, dynamic> map) {
-    DateTime? parsed;
-    final updated = map['updated_at'];
-    if (updated is String) {
-      parsed = DateTime.tryParse(updated);
-    }
-    // Fallback: Wenn updated_at null ist, nutze aktuelles Datum/Zeit
-    parsed ??= DateTime.now();
-    
+    final parsed = _parseUtcDateTime(map['updated_at']);
+    final lastMsg = _parseUtcDateTime(map['last_message_at']);
+
     final rawMsgs = map['messages'];
     final rawCards = map['cards'];
     return AgentChat(
@@ -316,6 +338,7 @@ class AgentChat extends Model {
       messageCount: map['message_count'] as int? ?? 0,
       lastUserMessage: map['last_user_message'] as String?,
       updatedAt: parsed,
+      lastMessageAt: lastMsg,
       messages: rawMsgs is List
           ? rawMsgs
               .whereType<Map>()
@@ -350,6 +373,7 @@ class AgentChat extends Model {
         messageCount: messageCount,
         lastUserMessage: lastUserMessage,
         updatedAt: updatedAt,
+        lastMessageAt: lastMessageAt,
         messages: messages,
         cards: cards,
       );
@@ -365,6 +389,7 @@ class AgentChat extends Model {
         messageCount: messageCount,
         lastUserMessage: lastUserMessage,
         updatedAt: updatedAt,
+        lastMessageAt: lastMessageAt,
         messages: messages,
         cards: newCards,
       );
@@ -383,6 +408,7 @@ class AgentChat extends Model {
           orElse: () => const AgentMessage(role: AgentMessageRole.assistant),
         ).content,
         updatedAt: updatedAt,
+        lastMessageAt: lastMessageAt,
         messages: newMessages,
         cards: cards,
       );
@@ -405,6 +431,7 @@ class AgentChat extends Model {
         messageCount,
         lastUserMessage,
         updatedAt,
+        lastMessageAt,
         messages,
         cards,
       ];

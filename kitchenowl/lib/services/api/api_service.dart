@@ -301,6 +301,19 @@ class ApiService {
     bool refreshOnException = true,
     Duration? timeout,
   }) async {
+    // If a token refresh / reconnect is in flight, wait for it to settle
+    // before issuing the request. This avoids a thundering herd of
+    // requests that all hit the server with a stale access token during
+    // an app-lifecycle resume (which would otherwise log a wave of 401s
+    // in the browser console and trigger redundant reconnect cycles).
+    if (refreshOnException && _refreshThread != null) {
+      try {
+        await _refreshThread;
+      } catch (_) {
+        // ignore — the refresh result is checked via isConnected/401 below
+      }
+    }
+
     try {
       http.Response response = await request().timeout(timeout ?? _TIMEOUT);
 

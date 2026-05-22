@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:kitchenowl/helpers/named_bytearray.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -164,6 +166,45 @@ class AgentChatCubit extends Cubit<AgentChatState> {
 
   AgentChatCubit(this.household, this.chatId) : super(const AgentChatState()) {
     refresh();
+    _setupEventListeners();
+  }
+
+  void _setupEventListeners() {
+    // Listen for agent chat updates (rename, persona change, etc.)
+    ApiService.getInstance().onAgentChatUpdate(_handleAgentChatUpdate);
+  }
+
+  void _handleAgentChatUpdate(dynamic data) {
+    if (data is! Map) return;
+    final chatData = data['chat'];
+    if (chatData is! Map) return;
+
+    try {
+      final updatedChat = AgentChat.fromJson(
+        Map<String, dynamic>.from(chatData),
+      );
+      // Only react to updates for the chat currently shown.
+      if (updatedChat.id == null || updatedChat.id != state.chat?.id) return;
+
+      // Update only metadata (title / persona / timestamps). Do NOT
+      // overwrite ``messages`` / ``cards`` here -- the WebSocket payload
+      // may race with optimistic local updates (an in-flight send) and
+      // would otherwise drop the user's just-typed message bubble or any
+      // recipe card the agent just produced.
+      final current = state.chat;
+      final merged = current == null
+          ? updatedChat
+          : current.copyWith(
+              title: updatedChat.title,
+              titleLocked: updatedChat.titleLocked,
+              titleAuto: updatedChat.titleAuto,
+              personaId: updatedChat.personaId,
+              clearPersona: updatedChat.personaId == null,
+            );
+      emit(state.copyWith(chat: merged));
+    } catch (_) {
+      // Silently ignore parsing errors
+    }
   }
 
   Future<void> refresh() async {
@@ -342,10 +383,12 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       }
       final uploaded = await ApiService.getInstance().uploadBytes(file);
       if (uploaded == null) {
-        final rolledBack = state.messages.toList()..removeLast();
+        // Keep the optimistic user bubble visible so the user does not
+        // get the impression their message was "lost" -- it just failed
+        // to send. ``retryLastUserMessage`` removes it before resending
+        // and the next ``refresh()`` reconciles with the server.
         emit(state.copyWith(
           sending: false,
-          messages: rolledBack,
           error: 'send_failed',
           attachedRecipeIds: attachedRecipeIds,
           attachedItemIds: attachedItemIds,
@@ -388,12 +431,15 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     }
 
     if (response == null) {
-      // Roll back the optimistic message and report the error. Keep the
-      // attachments and message text around so the UI can offer a retry.
-      final rolledBack = state.messages.toList()..removeLast();
+      // Do NOT silently drop the optimistic bubble: the request may have
+      // timed out client-side while the backend already persisted the
+      // user message (and possibly the assistant reply). Keep the bubble
+      // visible, surface a retry hint, and trigger a background refresh
+      // so the server's authoritative state replaces the optimistic one
+      // (or stays as-is if nothing was persisted). ``retryLastUserMessage``
+      // removes the trailing bubble before resending to avoid duplicates.
       emit(state.copyWith(
         sending: false,
-        messages: rolledBack,
         error: 'send_failed',
         attachedRecipeIds: attachedRecipeIds,
         attachedItemIds: attachedItemIds,
@@ -408,6 +454,10 @@ class AgentChatCubit extends Cubit<AgentChatState> {
         lastFailedFiles: attachedFiles,
       ));
       _inFlightFiles = const [];
+      // Fire-and-forget reconcile; ignore errors (e.g. offline) -- the
+      // user can pull-to-refresh later.
+      // ignore: discarded_futures
+      refresh();
       return;
     }
 
@@ -427,24 +477,24 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     await reloadCards();
   }
 
-  /// Cancel an in-flight send. Rolls back the optimistic user message and
-  /// surfaces a ``'cancelled'`` error so the UI can offer a retry. The
-  /// underlying HTTP request is *not* aborted on the wire; its eventual
-  /// result is dropped client-side via the [_sendSeq] token.
+  /// Cancel an in-flight send. Surfaces a ``'cancelled'`` error so the UI
+  /// can offer a retry. The optimistic user bubble is intentionally kept
+  /// visible: the underlying HTTP request is *not* aborted on the wire,
+  /// so the backend may still persist the message. A background refresh
+  /// reconciles the visible list with the server's authoritative state.
   void cancelSend() {
     if (!state.sending) return;
     _aborted = true;
     _sendSeq++;
-    final messages = state.messages.toList();
     String? failedText;
     List<int> failedRecipes = state.attachedRecipeIds;
     List<int> failedItems = state.attachedItemIds;
     Map<int, String> failedRecipeNames = state.attachedRecipeNames;
     Map<int, String> failedItemNames = state.attachedItemNames;
     List<NamedByteArray> failedFiles = _inFlightFiles;
-    if (messages.isNotEmpty &&
-        messages.last.role == AgentMessageRole.user) {
-      final last = messages.removeLast();
+    if (state.messages.isNotEmpty &&
+        state.messages.last.role == AgentMessageRole.user) {
+      final last = state.messages.last;
       failedText = last.content;
       final att = last.attachments;
       failedRecipes = att.recipeIds;
@@ -452,7 +502,6 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     }
     emit(state.copyWith(
       sending: false,
-      messages: messages,
       error: 'cancelled',
       lastFailedUserMessage: failedText,
       lastFailedRecipeIds: failedRecipes,
@@ -462,6 +511,11 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       lastFailedFiles: failedFiles,
     ));
     _inFlightFiles = const [];
+    // Fire-and-forget reconcile; if the backend did persist the message
+    // (and possibly the assistant reply) it will replace the optimistic
+    // bubble. Errors are swallowed -- the user can pull-to-refresh later.
+    // ignore: discarded_futures
+    refresh();
   }
 
   void clearRecipeNotification() {
@@ -493,22 +547,24 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       state.lastFailedItemIds.isNotEmpty ||
       state.lastFailedFiles.isNotEmpty;
     if ((text == null || text.isEmpty) && !hasFailedAttachments) return;
+    // Drop the trailing failed user bubble (kept around so the user could
+    // see their message did not disappear) before resending, otherwise the
+    // optimistic bubble added by ``sendMessage`` would duplicate it.
+    final pruned = state.messages.toList();
+    if (pruned.isNotEmpty && pruned.last.role == AgentMessageRole.user) {
+      pruned.removeLast();
+    }
     // Restore the last failed attachments so the retry mirrors the
     // original send 1:1.
-    if (state.lastFailedUserMessage != null) {
-      emit(state.copyWith(
-        attachedRecipeIds: state.lastFailedRecipeIds,
-        attachedItemIds: state.lastFailedItemIds,
-        attachedRecipeNames: state.lastFailedRecipeNames,
-        attachedItemNames: state.lastFailedItemNames,
-        attachedFiles: state.lastFailedFiles,
-        clearError: true,
-      ));
-    } else {
-      // Drop the prior failed-user bubble so the retry doesn't duplicate.
-      final pruned = state.messages.toList()..removeLast();
-      emit(state.copyWith(messages: pruned, clearError: true));
-    }
+    emit(state.copyWith(
+      messages: pruned,
+      attachedRecipeIds: state.lastFailedRecipeIds,
+      attachedItemIds: state.lastFailedItemIds,
+      attachedRecipeNames: state.lastFailedRecipeNames,
+      attachedItemNames: state.lastFailedItemNames,
+      attachedFiles: state.lastFailedFiles,
+      clearError: true,
+    ));
     await sendMessage(text ?? '');
   }
 
@@ -619,5 +675,11 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     await refresh();
     emit(state.copyWith(sending: false));
     return res.skipped;
+  }
+
+  @override
+  Future<void> close() async {
+    ApiService.getInstance().offAgentChatUpdate(_handleAgentChatUpdate);
+    return super.close();
   }
 }

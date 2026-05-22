@@ -62,7 +62,7 @@ class AgentRecipeCard(Model):
 
     chat: Mapped["AgentChat"] = cast(
         Mapped["AgentChat"],
-        db.relationship("AgentChat", uselist=False),
+        db.relationship("AgentChat", uselist=False, back_populates="cards"),
     )
     recipe: Mapped["Recipe | None"] = cast(
         Mapped["Recipe | None"],

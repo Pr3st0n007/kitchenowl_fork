@@ -8,6 +8,7 @@ context can be replayed when the user sends the next message.
 from __future__ import annotations
 
 import enum
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Self, List, cast
 
 from sqlalchemy import func, select
@@ -15,10 +16,27 @@ from sqlalchemy.orm import Mapped
 
 from app import db
 
+
+def _to_utc_ms(value: datetime | None) -> int | None:
+    """Serialize a (possibly naive) datetime as UTC milliseconds since epoch.
+
+    The rest of the API serializes datetimes the same way via
+    ``KitchenOwlJSONProvider`` -- we mirror it explicitly here for fields
+    we have to format ourselves so the frontend can always treat them as
+    timezone-aware UTC instants and convert to the user's local time.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(round(value.timestamp() * 1000))
+
+
 Model = db.Model
 if TYPE_CHECKING:
     from app.helpers.db_model_base import DbModelBase
     from app.models import Household, Recipe, User
+    from app.models.agent_recipe_card import AgentRecipeCard
     from app.models.agent_persona import AgentPersona
 
     Model = DbModelBase
@@ -76,6 +94,15 @@ class AgentChat(Model):
             order_by="AgentMessage.id",
         ),
     )
+    cards: Mapped[List["AgentRecipeCard"]] = cast(
+        Mapped[List["AgentRecipeCard"]],
+        db.relationship(
+            "AgentRecipeCard",
+            back_populates="chat",
+            cascade="all, delete-orphan",
+            order_by="AgentRecipeCard.position, AgentRecipeCard.id",
+        ),
+    )
 
     @classmethod
     def find_for_user(cls, household_id: int, user_id: int) -> list[Self]:
@@ -88,13 +115,19 @@ class AgentChat(Model):
     @classmethod
     def find_for_user_with_summary(
         cls, household_id: int, user_id: int
-    ) -> list[tuple[Self, int, str | None]]:
-        """Return chats with their message count and last user message in one query.
+    ) -> list[tuple[Self, int, str | None, datetime | None]]:
+        """Return chats with their message count, last user message and the
+        timestamp of their most recent message in one query.
 
         This avoids the N+1 problem ``obj_to_dict`` would otherwise trigger
         when listing many chats: rather than loading every message of every
         chat to compute ``message_count`` / ``last_user_message`` in Python,
         the same values are computed via correlated subqueries.
+
+        Sorting and the displayed timestamp are based on the timestamp of
+        the most recent message, NOT the chat row's ``updated_at`` (which
+        also bumps on metadata changes like rename / persona switch and
+        would otherwise make every chat appear "modified" simultaneously).
         """
         msg_count = (
             select(func.count(AgentMessage.id))
@@ -113,12 +146,21 @@ class AgentChat(Model):
             .correlate(cls)
             .scalar_subquery()
         )
-        stmt = (
-            select(cls, msg_count, last_user)
-            .where(cls.household_id == household_id, cls.user_id == user_id)
-            .order_by(cls.updated_at.desc())
+        last_msg_at = (
+            select(func.max(AgentMessage.updated_at))
+            .where(AgentMessage.chat_id == cls.id)
+            .correlate(cls)
+            .scalar_subquery()
         )
-        return [(row[0], row[1] or 0, row[2]) for row in db.session.execute(stmt).all()]
+        stmt = (
+            select(cls, msg_count, last_user, last_msg_at)
+            .where(cls.household_id == household_id, cls.user_id == user_id)
+            .order_by(func.coalesce(last_msg_at, cls.updated_at).desc())
+        )
+        return [
+            (row[0], row[1] or 0, row[2], row[3])
+            for row in db.session.execute(stmt).all()
+        ]
 
     def obj_to_dict(
         self,
@@ -132,11 +174,19 @@ class AgentChat(Model):
         return super().obj_to_dict(skip_columns, include_columns)
 
     def obj_to_summary_dict(
-        self, message_count: int, last_user_message: str | None
+        self,
+        message_count: int,
+        last_user_message: str | None,
+        last_message_at: datetime | None = None,
     ) -> dict[str, Any]:
         res = self.obj_to_dict()
         res["message_count"] = message_count
         res["last_user_message"] = last_user_message
+        # Emit as the same UTC-millisecond integer the rest of the API uses
+        # (see ``KitchenOwlJSONProvider``). This keeps the frontend tz-aware
+        # because a naive ``isoformat()`` string would otherwise be parsed
+        # as local time on the client.
+        res["last_message_at"] = _to_utc_ms(last_message_at)
         return res
 
     def obj_to_full_dict(self) -> dict[str, Any]:
@@ -148,6 +198,8 @@ class AgentChat(Model):
         )
         res["message_count"] = len(msgs)
         res["last_user_message"] = last_user.content if last_user else None
+        last_msg = msgs[-1] if msgs else None
+        res["last_message_at"] = _to_utc_ms(last_msg.updated_at if last_msg else None)
         # Open right-side recipe cards. Imported lazily to avoid a circular
         # import at module load time.
         from app.models.agent_recipe_card import AgentRecipeCard

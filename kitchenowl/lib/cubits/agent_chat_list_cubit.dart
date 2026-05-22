@@ -82,6 +82,34 @@ class AgentChatListCubit extends Cubit<AgentChatListState> {
 
   AgentChatListCubit(this.household) : super(const AgentChatListState()) {
     refresh();
+    _setupEventListeners();
+  }
+
+  void _setupEventListeners() {
+    // Listen for agent chat updates (rename, persona change, etc.)
+    ApiService.getInstance().onAgentChatUpdate(_handleAgentChatUpdate);
+  }
+
+  void _handleAgentChatUpdate(dynamic data) {
+    if (data is! Map) return;
+    final chatData = data['chat'];
+    if (chatData is! Map) return;
+
+    try {
+      final updatedChat = AgentChat.fromJson(
+        Map<String, dynamic>.from(chatData),
+      );
+      if (updatedChat.id == null) return;
+
+      // Update the chat in the current state
+      final updated = state.chats
+          .map((c) => c.id == updatedChat.id ? updatedChat : c)
+          .toList();
+
+      emit(state.copyWith(chats: updated));
+    } catch (_) {
+      // Silently ignore parsing errors
+    }
   }
 
   Future<void> refresh() async {
@@ -89,7 +117,12 @@ class AgentChatListCubit extends Cubit<AgentChatListState> {
     final api = ApiService.getInstance();
     final config = await api.getAgentConfig(household);
     final ready = config?.isReady ?? false;
-    final chats = await api.getAgentChats(household) ?? const <AgentChat>[];
+    // Preserve the previously known chats on transient API failures: a
+    // null response (offline, 5xx, ...) must NOT clear the visible list,
+    // otherwise the user sees their chats "disappear" on every flaky
+    // refresh and only get them back on the next successful fetch.
+    final fetched = await api.getAgentChats(household);
+    final chats = fetched ?? state.chats;
     AgentPersonaList? personaList;
     if (ready) {
       personaList = await api.getAgentPersonas(household);
@@ -98,8 +131,9 @@ class AgentChatListCubit extends Cubit<AgentChatListState> {
       loading: false,
       chats: chats,
       agentReady: ready,
-      personas: personaList?.personas ?? const [],
-      userDefaultPersonaId: personaList?.userDefaultPersonaId,
+      personas: personaList?.personas ?? state.personas,
+      userDefaultPersonaId:
+          personaList?.userDefaultPersonaId ?? state.userDefaultPersonaId,
       search: state.search,
       filterPersonaId: state.filterPersonaId,
     ));
@@ -160,5 +194,11 @@ class AgentChatListCubit extends Cubit<AgentChatListState> {
         emit(state.copyWith(userDefaultPersonaId: personaId));
       }
     }
+  }
+
+  @override
+  Future<void> close() async {
+    ApiService.getInstance().offAgentChatUpdate(_handleAgentChatUpdate);
+    return super.close();
   }
 }

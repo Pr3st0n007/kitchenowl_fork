@@ -563,6 +563,18 @@ extension AgentApi on ApiService {
       Map<String, dynamic>.from(jsonDecode(res.body) as Map),
     );
   }
+
+  // -------------------------------------------------------------- WebSocket listeners
+
+  /// Register a listener for agent chat updates (rename, persona change, etc).
+  void onAgentChatUpdate(dynamic Function(dynamic) handler) {
+    socket.on("agent_chat:update", handler);
+  }
+
+  /// Unregister a listener for agent chat updates.
+  void offAgentChatUpdate(dynamic Function(dynamic) handler) {
+    socket.off("agent_chat:update", handler);
+  }
 }
 
 class AgentPersonaList {

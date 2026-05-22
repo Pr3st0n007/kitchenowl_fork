@@ -316,6 +316,7 @@ class _AgentChatPageState extends State<AgentChatPage> {
 
           return Scaffold(
             appBar: AppBar(
+              titleSpacing: 0,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () {
@@ -327,22 +328,29 @@ class _AgentChatPageState extends State<AgentChatPage> {
                       extra: widget.household);
                 },
               ),
-              title: InkWell(
-                onTap: () => _renameDialog(context, state.chat),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        overflow: TextOverflow.ellipsis,
+              title: LayoutBuilder(builder: (ctx, constraints) {
+                final narrow = MediaQuery.of(ctx).size.width < 420;
+                return InkWell(
+                  onTap: () => _renameDialog(context, state.chat),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: narrow
+                              ? Theme.of(ctx).textTheme.titleMedium
+                              : Theme.of(ctx).textTheme.titleLarge,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.edit_outlined, size: 16),
-                  ],
-                ),
-              ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.edit_outlined, size: narrow ? 14 : 16),
+                    ],
+                  ),
+                );
+              }),
               actions: [
                 if (persona != null || isEmpty)
                   Padding(

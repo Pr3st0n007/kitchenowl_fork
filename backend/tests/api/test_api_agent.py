@@ -185,6 +185,55 @@ def test_chat_flow_runs_agent_and_creates_recipe(
     assert any(r["name"] == "Spaghetti Aglio e Olio" for r in recipes)
 
 
+def test_delete_chat_removes_recipe_cards(user_client_with_household, household_id):
+    _configure_ready_agent(user_client_with_household, household_id)
+
+    # Create a first chat.
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    assert res.status_code == 200
+    chat_id = res.get_json()["id"]
+
+    # Create a recipe and attach it as a chat card.
+    recipe_res = user_client_with_household.post(
+        f"/api/household/{household_id}/recipe",
+        json={
+            "name": "Pinned card recipe",
+            "description": "test",
+            "yields": 1,
+            "time": 5,
+            "items": [],
+        },
+    )
+    assert recipe_res.status_code == 200
+    recipe_id = recipe_res.get_json()["id"]
+
+    attach_res = user_client_with_household.post(
+        f"{_chats_path(household_id)}/{chat_id}/cards",
+        json={"recipe_id": recipe_id},
+    )
+    assert attach_res.status_code == 200, attach_res.get_data(as_text=True)
+
+    cards_res = user_client_with_household.get(
+        f"{_chats_path(household_id)}/{chat_id}/cards"
+    )
+    assert cards_res.status_code == 200
+    assert len(cards_res.get_json()) == 1
+
+    res = user_client_with_household.delete(f"{_chats_path(household_id)}/{chat_id}")
+    assert res.status_code == 200
+
+    # New chats must not inherit stale cards (regression check).
+    res = user_client_with_household.post(_chats_path(household_id), json={})
+    assert res.status_code == 200
+    new_chat_id = res.get_json()["id"]
+
+    new_cards_res = user_client_with_household.get(
+        f"{_chats_path(household_id)}/{new_chat_id}/cards"
+    )
+    assert new_cards_res.status_code == 200
+    assert new_cards_res.get_json() == []
+
+
 def _upload_fixture_file(client, filename: str, data: bytes) -> str:
     from app.config import UPLOAD_FOLDER
 
@@ -380,7 +429,9 @@ def test_agent_attached_files_are_not_deleted_as_unused(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
         "/x8AAwMB/ax7vF0AAAAASUVORK5CYII="
     )
-    uploaded = _upload_fixture_file(user_client_with_household, "keep_me.png", png_bytes)
+    uploaded = _upload_fixture_file(
+        user_client_with_household, "keep_me.png", png_bytes
+    )
 
     def fake_chat(self, messages, tools=None, temperature=None):
         return LLMResponse(content="ok", tool_calls=[])

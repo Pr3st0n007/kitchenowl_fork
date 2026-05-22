@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify
 from flask_jwt_extended import current_user, jwt_required
 
-from app import db
+from app import db, socketio
 from app.errors import ForbiddenRequest, InvalidUsage, NotFoundRequest
 from app.helpers import authorize_household, validate_args
 from app.models import (
@@ -63,7 +63,12 @@ def _get_owned_chat(household_id: int, chat_id: int) -> AgentChat:
 def list_chats(household_id):
     _require_agent_enabled(household_id)
     rows = AgentChat.find_for_user_with_summary(household_id, current_user.id)
-    return jsonify([c.obj_to_summary_dict(count, last) for c, count, last in rows])
+    return jsonify(
+        [
+            c.obj_to_summary_dict(count, last, last_at)
+            for c, count, last, last_at in rows
+        ]
+    )
 
 
 @agentChatHousehold.route("/chats", methods=["POST"])
@@ -148,6 +153,10 @@ def get_chat(household_id, chat_id):
 @authorize_household()
 def delete_chat(household_id, chat_id):
     chat = _get_owned_chat(household_id, chat_id)
+    # Keep chat deletion robust even on DBs/environments where FK cascade
+    # is not enforced (e.g. SQLite with foreign_keys pragma disabled).
+    for card in AgentRecipeCard.query.filter(AgentRecipeCard.chat_id == chat.id).all():
+        db.session.delete(card)
     chat.delete()
     return jsonify({"deleted": True, "id": chat_id})
 
@@ -186,7 +195,13 @@ def update_chat(args, household_id, chat_id):
             chat.title_auto = False
 
     chat.save()
-    return jsonify(chat.obj_to_full_dict())
+    updated_chat_dict = chat.obj_to_full_dict()
+    socketio.emit(
+        "agent_chat:update",
+        {"chat": updated_chat_dict},
+        to="household/" + str(household_id),
+    )
+    return jsonify(updated_chat_dict)
 
 
 @agentChatHousehold.route("/chats/<int:chat_id>/messages", methods=["POST"])
@@ -213,6 +228,17 @@ def post_message(args, household_id, chat_id):
     except Exception as exc:
         db.session.rollback()
         raise InvalidUsage(f"Agent failed: {exc}")
+
+    # Notify other connected clients (and the chat list view this user has
+    # open in another tab / behind the chat page) that this chat now has a
+    # new last message and possibly an updated auto-title. Without this
+    # the overview keeps showing the stale title and last_message_at until
+    # the user manually refreshes.
+    socketio.emit(
+        "agent_chat:update",
+        {"chat": chat.obj_to_full_dict()},
+        to="household/" + str(household_id),
+    )
 
     return jsonify(
         {

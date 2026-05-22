@@ -10,7 +10,6 @@ import 'package:kitchenowl/models/agent_chat.dart';
 import 'package:kitchenowl/models/household.dart';
 import 'package:kitchenowl/pages/agent_settings_page.dart';
 import 'package:kitchenowl/widgets/agent_new_chat_fab.dart';
-import 'package:kitchenowl/widgets/agent_persona_picker.dart';
 
 class AgentChatListPage extends StatelessWidget {
   const AgentChatListPage({super.key});
@@ -46,8 +45,8 @@ class AgentChatListPage extends StatelessWidget {
   List<_ChatGroup> _groupChatsByDay(List<AgentChat> chats, DateTime now) {
     final sorted = [...chats]
       ..sort((a, b) {
-        final ad = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bd = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final ad = a.displayTimestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bd = b.displayTimestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
         return bd.compareTo(ad);
       });
 
@@ -59,7 +58,7 @@ class AgentChatListPage extends StatelessWidget {
     };
 
     for (final chat in sorted) {
-      final bucket = _bucketForDate(chat.updatedAt, now);
+      final bucket = _bucketForDate(chat.displayTimestamp, now);
       buckets[bucket]!.add(chat);
     }
 
@@ -184,40 +183,98 @@ class AgentChatListPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _settingsActionBar(context, household),
-              // Persona filter chips
-              if (state.personas.isNotEmpty)
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: AgentPersonaPicker(
-                    personas: state.personas,
-                    selectedId: state.filterPersonaId,
-                    onChanged: cubit.setFilterPersona,
-                  ),
-                ),
-              // Search bar
+              // Compact menu: search bar + persona filter + settings in one row
               Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: loc.agentSearchChats,
-                    prefixIcon: const Icon(Icons.search),
-                    isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: loc.agentSearchChats,
+                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        onChanged: cubit.setSearch,
+                      ),
                     ),
-                  ),
-                  onChanged: cubit.setSearch,
+                    if (state.personas.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      PopupMenuButton<int?>(
+                        tooltip: 'Filter',
+                        icon: Icon(
+                          state.filterPersonaId != null
+                              ? Icons.filter_alt
+                              : Icons.filter_alt_outlined,
+                        ),
+                        onSelected: cubit.setFilterPersona,
+                        itemBuilder: (ctx) => [
+                          PopupMenuItem<int?>(
+                            value: null,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.clear, size: 18),
+                                const SizedBox(width: 8),
+                                Text(loc.agentFilterAll),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          for (final p in state.personas)
+                            PopupMenuItem<int?>(
+                              value: p.id,
+                              child: Row(
+                                children: [
+                                  Icon(personaIconFor(p), size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(p.name),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: loc.agentSettings,
+                      icon: const Icon(Icons.settings_outlined),
+                      onPressed: () => _openSettings(context, household),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
                 child: chats.isEmpty
-                    ? Center(
-                        child: Text(
-                          hasFilter ? loc.agentNoChatsForFilter : loc.agentNoChats,
-                        ),
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Spacer(),
+                          Icon(
+                            Icons.forum_outlined,
+                            size: 64,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.5),
+                          ),
+                          const SizedBox(height: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              hasFilter
+                                  ? loc.agentNoChatsForFilter
+                                  : loc.agentNoChats,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                          ),
+                          const Spacer(),
+                        ],
                       )
                     : ListView(
                         children: [
@@ -238,32 +295,50 @@ class AgentChatListPage extends StatelessWidget {
                                         (p) => p.id == chat.personaId,
                                         orElse: () => null,
                                       );
+                                  final timestampText = _formatLastUpdated(
+                                      context, chat.displayTimestamp);
                                   return ListTile(
+                                    contentPadding: const EdgeInsets.fromLTRB(
+                                        16, 0, 4, 0),
                                     leading: CircleAvatar(
                                       child: Icon(personaIconFor(persona)),
                                     ),
-                                    title: Text(
-                                      chat.title?.isNotEmpty == true
-                                          ? chat.title!
-                                          : loc.agentChat,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: chat.lastUserMessage?.isNotEmpty == true
-                                        ? Text(
-                                            chat.lastUserMessage!,
+                                    title: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            chat.title?.isNotEmpty == true
+                                                ? chat.title!
+                                                : loc.agentChat,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                          )
-                                        : null,
+                                          ),
+                                        ),
+                                        if (timestampText.isNotEmpty) ...[
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            timestampText,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    subtitle:
+                                        chat.lastUserMessage?.isNotEmpty == true
+                                            ? Text(
+                                                chat.lastUserMessage!,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              )
+                                            : null,
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          _formatLastUpdated(context, chat.updatedAt),
-                                          style:
-                                              Theme.of(context).textTheme.bodySmall,
-                                        ),
                                         PopupMenuButton<_ChatAction>(
                                           tooltip: loc.more,
                                           icon: const Icon(Icons.more_vert),

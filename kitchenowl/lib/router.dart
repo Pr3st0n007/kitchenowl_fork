@@ -393,17 +393,26 @@ final router = GoRouter(
               routes: [
                 GoRoute(
                   path: ':chatId',
-                  builder: (context, state) => AgentChatPage(
-                    household: ((state.extra is Household?)
-                            ? (state.extra as Household?)
-                            : null) ??
-                        Household(
-                          id: int.tryParse(state.pathParameters['id'] ?? '') ??
-                              -1,
-                        ),
-                    chatId:
-                        int.tryParse(state.pathParameters['chatId'] ?? '') ?? 0,
-                  ),
+                  builder: (context, state) {
+                    final chatId =
+                        int.tryParse(state.pathParameters['chatId'] ?? '') ?? 0;
+                    return AgentChatPage(
+                      // Force a fresh State (and thus a fresh
+                      // ``AgentChatCubit``) when navigating between two
+                      // chats via the same route. Without this key Flutter
+                      // would reuse the previous page's State and leak
+                      // attached recipes / files into the next chat.
+                      key: ValueKey('agent-chat-$chatId'),
+                      household: ((state.extra is Household?)
+                              ? (state.extra as Household?)
+                              : null) ??
+                          Household(
+                            id: int.tryParse(state.pathParameters['id'] ?? '') ??
+                                -1,
+                          ),
+                      chatId: chatId,
+                    );
+                  },
                 ),
               ],
             ),
