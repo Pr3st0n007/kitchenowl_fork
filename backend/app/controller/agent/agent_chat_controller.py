@@ -181,6 +181,23 @@ def update_chat(args, household_id, chat_id):
             raise InvalidUsage("Cannot change persona once the chat has user messages")
         persona = _resolve_persona_for_create(household_id, args["persona_id"])
         chat.persona_id = persona.id if persona else None
+        # Replace the seeded assistant greeting so the chat reflects the new
+        # persona's opening line. The greeting is always the first message
+        # created by ``create_chat`` (and the only one when no user message
+        # has been sent yet).
+        cfg = LLMConfig.find_by_household(household_id)
+        if cfg is not None:
+            new_greeting = cfg.effective_initial_greeting(persona)
+            assistant_msgs = [
+                m for m in chat.messages if m.role == AgentMessageRole.ASSISTANT
+            ]
+            if assistant_msgs:
+                # Update the earliest assistant message (the seeded greeting).
+                # AgentChat.messages is ordered by id, so the smallest id is
+                # the first message ever stored on this chat.
+                assistant_msgs.sort(key=lambda m: m.id or 0)
+                assistant_msgs[0].content = new_greeting
+                assistant_msgs[0].save()
 
     if "title" in args:
         raw = args.get("title")

@@ -581,7 +581,13 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       personaId,
     );
     if (updated == null) return false;
-    emit(state.copyWith(chat: updated));
+    // The backend rewrites the seeded greeting to match the new persona, so
+    // pull the refreshed messages along with the chat to keep the bubble
+    // shown to the user in sync with the chosen persona.
+    emit(state.copyWith(
+      chat: updated,
+      messages: updated.messages,
+    ));
     return true;
   }
 

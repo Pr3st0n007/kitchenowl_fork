@@ -258,17 +258,6 @@ class _AgentChatPageState extends State<AgentChatPage> {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person_off_outlined),
-                      ),
-                      title: Text(loc.agentUseDefault),
-                      selected: current == null,
-                      onTap: () {
-                        wasPicked = true;
-                        Navigator.of(ctx).pop(null);
-                      },
-                    ),
                     for (final p in personas)
                       ListTile(
                         leading: CircleAvatar(child: Icon(personaIconFor(p))),
@@ -313,6 +302,20 @@ class _AgentChatPageState extends State<AgentChatPage> {
               ? state.chat!.title!
               : loc.agentChat;
           final isEmpty = !state.loading && state.messages.isEmpty;
+          // Persona can be changed until the first user message has been
+          // sent. The backend seeds an assistant greeting on chat create,
+          // so checking ``messages.isEmpty`` is not enough.
+          final noUserMessages = !state.messages
+              .any((m) => m.role == AgentMessageRole.user);
+          final personaListState =
+              context.watch<AgentChatListCubit?>()?.state;
+          // Only consider the persona switcher "available" once the chat
+          // payload has been loaded; otherwise the banner briefly flashes
+          // a default-persona label before the real chat data arrives.
+          final canChangePersona = !state.loading &&
+              state.chat != null &&
+              noUserMessages &&
+              (personaListState?.personas.isNotEmpty ?? false);
 
           return Scaffold(
             appBar: AppBar(
@@ -352,15 +355,11 @@ class _AgentChatPageState extends State<AgentChatPage> {
                 );
               }),
               actions: [
-                if (persona != null || isEmpty)
+                if (persona != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: Center(
-                      child: _PersonaChip(
-                        persona: persona,
-                        canChange: isEmpty,
-                        onTap: () => _showPersonaPicker(context, persona),
-                      ),
+                      child: _PersonaChip(persona: persona),
                     ),
                   ),
               ],
@@ -473,6 +472,11 @@ class _AgentChatPageState extends State<AgentChatPage> {
                     ),
                   ),
                   const Divider(height: 1),
+                  if (canChangePersona)
+                    _PersonaSwitcherBanner(
+                      persona: persona,
+                      onTap: () => _showPersonaPicker(context, persona),
+                    ),
                   _Composer(
                     controller: _inputCtrl,
                     sending: state.sending,
@@ -573,6 +577,54 @@ class _AgentChatPageState extends State<AgentChatPage> {
   }
 }
 
+/// Slim banner shown above the composer while no user message has been
+/// sent yet, advertising that the chat's persona can still be changed.
+/// Tapping it opens the persona picker bottom sheet on [AgentChatPage].
+class _PersonaSwitcherBanner extends StatelessWidget {
+  final AgentPersona? persona;
+  final VoidCallback onTap;
+
+  const _PersonaSwitcherBanner({
+    required this.persona,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final label = persona?.name ?? loc.agentUseDefault;
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(personaIconFor(persona),
+                  size: 18, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${loc.agentChoosePersona}: $label',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(Icons.swap_horiz,
+                  size: 18, color: theme.colorScheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyChatHero extends StatelessWidget {
   final AgentPersona? persona;
   final ValueChanged<String> onPrompt;
@@ -658,45 +710,22 @@ class _AssistantTypingBubble extends StatelessWidget {
   }
 }
 
-/// AppBar action chip showing the chat's persona. While the chat is empty
-/// (``canChange == true``) it acts as a button that opens the persona
-/// picker; once the conversation has started it becomes a static label.
+/// AppBar chip showing the chat's current persona as a static label.
+/// The persona is changed via the banner above the composer (see
+/// [_PersonaSwitcherBanner]) while the chat still has no user messages.
 class _PersonaChip extends StatelessWidget {
   final AgentPersona? persona;
-  final bool canChange;
-  final VoidCallback onTap;
 
-  const _PersonaChip({
-    required this.persona,
-    required this.canChange,
-    required this.onTap,
-  });
+  const _PersonaChip({required this.persona});
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final label = persona?.name ?? loc.agentUseDefault;
     final icon = personaIconFor(persona);
-    if (!canChange) {
-      return Chip(
-        avatar: Icon(icon, size: 18),
-        label: Text(label, style: const TextStyle(fontSize: 12)),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      );
-    }
-    return ActionChip(
+    return Chip(
       avatar: Icon(icon, size: 18),
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 12)),
-          const SizedBox(width: 4),
-          const Icon(Icons.expand_more, size: 16),
-        ],
-      ),
-      tooltip: loc.agentChoosePersona,
-      onPressed: onTap,
+      label: Text(label, style: const TextStyle(fontSize: 12)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
     );

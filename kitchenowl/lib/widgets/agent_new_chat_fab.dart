@@ -7,8 +7,11 @@ import 'package:kitchenowl/cubits/household_cubit.dart';
 /// Floating action button shown on the agent chat list page.
 /// Tapping it creates a new chat and navigates to it.
 ///
-/// If [personaId] is provided, the new chat is created for that persona.
-/// Otherwise the cubit falls back to the user's / household defaults.
+/// If [personaId] is provided, the new chat is created for that persona;
+/// otherwise the cubit falls back to the user's / household defaults.
+/// The persona can still be changed from within the chat itself while the
+/// conversation is still empty (see the persona switcher on the empty
+/// chat hero in `AgentChatPage`).
 class AgentNewChatFab extends StatelessWidget {
   final int? personaId;
 

@@ -205,17 +205,24 @@ class AgentChatListPage extends StatelessWidget {
                     ),
                     if (state.personas.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      PopupMenuButton<int?>(
+                      // NOTE: PopupMenuButton treats a `null` selection value
+                      // as a "menu dismissed" event and never invokes
+                      // `onSelected`. We therefore use a non-null sentinel
+                      // (`_kFilterAllSentinel`) for the "All" entry so that
+                      // clearing the persona filter actually works.
+                      PopupMenuButton<int>(
                         tooltip: 'Filter',
                         icon: Icon(
                           state.filterPersonaId != null
                               ? Icons.filter_alt
                               : Icons.filter_alt_outlined,
                         ),
-                        onSelected: cubit.setFilterPersona,
+                        onSelected: (value) => cubit.setFilterPersona(
+                          value == _kFilterAllSentinel ? null : value,
+                        ),
                         itemBuilder: (ctx) => [
-                          PopupMenuItem<int?>(
-                            value: null,
+                          PopupMenuItem<int>(
+                            value: _kFilterAllSentinel,
                             child: Row(
                               children: [
                                 const Icon(Icons.clear, size: 18),
@@ -226,7 +233,7 @@ class AgentChatListPage extends StatelessWidget {
                           ),
                           const PopupMenuDivider(),
                           for (final p in state.personas)
-                            PopupMenuItem<int?>(
+                            PopupMenuItem<int>(
                               value: p.id,
                               child: Row(
                                 children: [
@@ -475,6 +482,11 @@ class AgentChatListPage extends StatelessWidget {
     await cubit.renameChat(chat.id!, result);
   }
 }
+
+/// Sentinel used by the persona filter popup menu to represent the
+/// "All personas" choice. Cannot collide with a real persona id (those are
+/// non-negative auto-increment integers from the backend).
+const int _kFilterAllSentinel = -1;
 
 enum _ChatBucket {
   today,
