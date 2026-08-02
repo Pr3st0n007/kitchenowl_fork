@@ -31,7 +31,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   double _dotScale(int index) {
     // Stagger each dot by 0.2 of the cycle period.
-    final shifted = (_controller.value - index * 0.2).remainder(1.0);
+    final shifted = (_controller.value - index * 0.2) % 1.0;
     // Map to a 0-1-0 "bounce" within the first half of the cycle.
     final t = (shifted * 2).clamp(0.0, 1.0);
     final bounce = t < 0.5 ? t * 2 : (1.0 - t) * 2;

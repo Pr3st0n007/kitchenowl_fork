@@ -167,10 +167,10 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                   TextField(
                     controller: _braveApiKeyCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Brave Search API key',
+                      labelText: loc.agentBraveApiKey,
                       helperText: cfg?.braveSearchApiKeySet == true
-                          ? 'A Brave API key is stored. Enter a new one to overwrite, or leave empty to keep it.'
-                          : 'No Brave API key stored (web search falls back without it).',
+                          ? loc.agentBraveApiKeyStored
+                          : loc.agentBraveApiKeyMissing,
                     ),
                     obscureText: true,
                     autocorrect: false,

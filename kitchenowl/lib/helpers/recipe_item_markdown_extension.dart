@@ -156,7 +156,7 @@ String? resolveRecipeItemName(
 
 String _normalizeItemName(String name) {
   return name.toLowerCase().replaceAll(
-      RegExp(r"""\n|\.|\(|\)|\\|\/|\?|\*|\+|,|!|%|$|#|@|^|;|:|"|=|~|{"""), "");
+      RegExp(r"""[\n.()\\/?\*+,!%$#@^;:"=~{]"""), "");
 }
 
 class RecipeExplicitItemMarkdownSyntax extends md.InlineSyntax {
