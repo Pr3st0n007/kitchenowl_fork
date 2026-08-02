@@ -35,9 +35,7 @@ def _agent_attached_filenames() -> set[str]:
 def deleteUnusedFiles() -> int:
     agent_attached = _agent_attached_filenames()
     filesToDelete = [
-        f
-        for f in File.query.all()
-        if f.isUnused() and f.filename not in agent_attached
+        f for f in File.query.all() if f.isUnused() and f.filename not in agent_attached
     ]
     for f in tqdm(
         filesToDelete,

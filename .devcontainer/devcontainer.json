@@ -31,11 +31,15 @@
 	"portsAttributes": {
 		"5000": {
 			"label": "KitchenOwl Backend",
-			"onAutoForward": "notify"
+			"onAutoForward": "notify",
+			"protocol": "http",
+			"requireLocalPort": true
 		},
 		"8080": {
 			"label": "Flutter Web",
-			"onAutoForward": "notify"
+			"onAutoForward": "openBrowser",
+			"protocol": "http",
+			"requireLocalPort": true
 		}
 	},
 	"postCreateCommand": "bash .devcontainer/post-create.sh",
