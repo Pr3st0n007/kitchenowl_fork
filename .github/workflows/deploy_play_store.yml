@@ -27,7 +27,7 @@ jobs:
       - name: Clone Flutter repository with stable channel
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 3.44.8
+          flutter-version: 3.45.0-0.1.pre
       - run: flutter config --no-analytics
 
       # Checkout code and get packages.
