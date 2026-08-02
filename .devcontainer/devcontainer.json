@@ -19,8 +19,8 @@
 	"containerEnv": {
 		"FLUTTER_HOME": "/opt/flutter",
 		"PUB_CACHE": "/home/vscode/.pub-cache",
-		"UV_PROJECT_ENVIRONMENT": "/workspaces/kitchenowl/backend/.venv",
-		"STORAGE_PATH": "/workspaces/kitchenowl/backend/.data",
+		"UV_PROJECT_ENVIRONMENT": "${containerWorkspaceFolder}/backend/.venv",
+		"STORAGE_PATH": "${containerWorkspaceFolder}/backend/.data",
 		"JWT_SECRET_KEY": "dev-secret-change-me",
 		"DEBUG": "True"
 	},
@@ -54,7 +54,7 @@
 				"GitHub.vscode-pull-request-github"
 			],
 			"settings": {
-				"python.defaultInterpreterPath": "/workspaces/kitchenowl/backend/.venv/bin/python",
+				"python.defaultInterpreterPath": "${containerWorkspaceFolder}/backend/.venv/bin/python",
 				"python.terminal.activateEnvironment": true,
 				"[python]": {
 					"editor.defaultFormatter": "charliermarsh.ruff",
