@@ -156,8 +156,7 @@ String? resolveRecipeItemName(
 
 String _normalizeItemName(String name) {
   return name.toLowerCase().replaceAll(
-      RegExp(r"""\n|\.|\(|\)|\\|\/|\?|\*|\+|,|!|%|$|#|@|^|;|:|"|=|~|{"""),
-      "");
+      RegExp(r"""\n|\.|\(|\)|\\|\/|\?|\*|\+|,|!|%|$|#|@|^|;|:|"|=|~|{"""), "");
 }
 
 class RecipeExplicitItemMarkdownSyntax extends md.InlineSyntax {
@@ -165,12 +164,19 @@ class RecipeExplicitItemMarkdownSyntax extends md.InlineSyntax {
 
   RecipeExplicitItemMarkdownSyntax(this.recipe)
       : super(
-          _pattern,
-          caseSensitive: false,
+          r"$^",
+          startCharacter: 0x40,
         );
 
-  static const String _pattern =
-      r"""@([^ \n\.\(\)\\\/\?\*\+,!%$#@^;:"=~{]+)({([^}]*)})?"""; // TODO: replace with \p{L} and unicode=true
+  static const String _pattern = r"""@([\p{L}_]+)(\{([^}]*)\})?""";
+
+  @override
+  final RegExp pattern = RegExp(
+    _pattern,
+    multiLine: true,
+    caseSensitive: false,
+    unicode: true,
+  );
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
