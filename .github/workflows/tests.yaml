@@ -1,16 +1,15 @@
 name:  Quality
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - kitchenowl/**
   pull_request:
     types:
       - opened
       - synchronize
     paths:
-      - kitchenowl/**
+      - kitchenowl/**  # push:
+  #   branches: [main]
+  #   paths:
+  #     - kitchenowl/**
 
 jobs:
   analyze:

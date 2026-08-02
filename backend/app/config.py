@@ -54,6 +54,8 @@ PROJECT_DIR = os.path.dirname(APP_DIR)
 STORAGE_PATH = os.getenv("STORAGE_PATH", PROJECT_DIR)
 UPLOAD_FOLDER = STORAGE_PATH + "/upload"
 ALLOWED_FILE_EXTENSIONS = {"txt", "pdf", "png", "jpg", "jpeg", "gif", "webp", "jxl"}
+AGENT_MAX_FILES_PER_MESSAGE = int(os.getenv("AGENT_MAX_FILES_PER_MESSAGE", "10"))
+AGENT_MAX_FILE_SIZE = int(os.getenv("AGENT_MAX_FILE_SIZE", str(20 * 1000 * 1000)))
 
 FRONT_URL = os.getenv("FRONT_URL")
 

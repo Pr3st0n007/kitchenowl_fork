@@ -7,10 +7,10 @@ on:
         description: "Fastlane lane to use"
         required: true
         default: "internal"
-  push:
-    tags:
-      - "v*"
-      - "beta-v*"
+#   push:
+#     tags:
+#       - "v*"
+#       - "beta-v*"
 
 jobs:
   fastlane-deploy:
