@@ -80,8 +80,7 @@ def recipe_time():
 
 FIX_DATETIME = int(
     (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
+        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         + timedelta(days=2)
     ).timestamp()
     * 1000
