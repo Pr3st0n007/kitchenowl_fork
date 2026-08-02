@@ -85,8 +85,9 @@ class AgentChatState extends Equatable {
         chat: chat ?? this.chat,
         messages: messages ?? this.messages,
         error: clearError ? null : (error ?? this.error),
-        lastCreatedRecipeId:
-            clearRecipe ? null : (lastCreatedRecipeId ?? this.lastCreatedRecipeId),
+        lastCreatedRecipeId: clearRecipe
+            ? null
+            : (lastCreatedRecipeId ?? this.lastCreatedRecipeId),
         cards: cards ?? this.cards,
         attachedRecipeIds: clearAttachments
             ? const []
@@ -100,9 +101,8 @@ class AgentChatState extends Equatable {
         attachedItemNames: clearAttachments
             ? const {}
             : (attachedItemNames ?? this.attachedItemNames),
-        attachedFiles: clearAttachments
-          ? const []
-          : (attachedFiles ?? this.attachedFiles),
+        attachedFiles:
+            clearAttachments ? const [] : (attachedFiles ?? this.attachedFiles),
         lastFailedUserMessage: clearLastFailed
             ? null
             : (lastFailedUserMessage ?? this.lastFailedUserMessage),
@@ -119,8 +119,8 @@ class AgentChatState extends Equatable {
             ? const {}
             : (lastFailedItemNames ?? this.lastFailedItemNames),
         lastFailedFiles: clearLastFailed
-          ? const []
-          : (lastFailedFiles ?? this.lastFailedFiles),
+            ? const []
+            : (lastFailedFiles ?? this.lastFailedFiles),
       );
 
   /// True when the last send was cancelled or failed and a retry is
@@ -308,8 +308,7 @@ class AgentChatCubit extends Cubit<AgentChatState> {
     );
     if (card == null) return false;
     // Replace if already present (id-match), else append.
-    final next = state.cards.where((c) => c.id != card.id).toList()
-      ..add(card);
+    final next = state.cards.where((c) => c.id != card.id).toList()..add(card);
     emit(state.copyWith(cards: next));
     return true;
   }
@@ -539,13 +538,14 @@ class AgentChatCubit extends Cubit<AgentChatState> {
         // Backwards compatibility for the older 'send_failed' path that
         // didn't populate lastFailedUserMessage: peek at the trailing
         // user message instead.
-        (state.error != null && state.messages.isNotEmpty &&
+        (state.error != null &&
+                state.messages.isNotEmpty &&
                 state.messages.last.role == AgentMessageRole.user
             ? state.messages.last.content
             : null);
     final hasFailedAttachments = state.lastFailedRecipeIds.isNotEmpty ||
-      state.lastFailedItemIds.isNotEmpty ||
-      state.lastFailedFiles.isNotEmpty;
+        state.lastFailedItemIds.isNotEmpty ||
+        state.lastFailedFiles.isNotEmpty;
     if ((text == null || text.isEmpty) && !hasFailedAttachments) return;
     // Drop the trailing failed user bubble (kept around so the user could
     // see their message did not disappear) before resending, otherwise the
@@ -566,6 +566,22 @@ class AgentChatCubit extends Cubit<AgentChatState> {
       clearError: true,
     ));
     await sendMessage(text ?? '');
+  }
+
+  Future<void> confirmToolCall(int messageId) async {
+    if (state.sending) return;
+    emit(state.copyWith(sending: true, clearError: true));
+    final result = await ApiService.getInstance().confirmAgentToolCall(
+      household,
+      chatId,
+      messageId,
+    );
+    if (result == null) {
+      emit(state.copyWith(sending: false, error: 'tool_confirmation_failed'));
+      return;
+    }
+    await refresh();
+    emit(state.copyWith(sending: false, clearError: true));
   }
 
   /// Change the persona attached to this chat. Only allowed before the

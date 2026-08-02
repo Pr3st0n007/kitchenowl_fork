@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import logging
+from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify
 from flask_jwt_extended import current_user, jwt_required
@@ -11,22 +12,22 @@ from app import db, socketio
 from app.errors import ForbiddenRequest, InvalidUsage, NotFoundRequest
 from app.helpers import authorize_household, validate_args
 from app.models import (
+    CARD_SOURCE_EXISTING,
     AgentChat,
     AgentMessage,
     AgentMessageRole,
     AgentPersona,
     AgentRecipeCard,
-    CARD_SOURCE_EXISTING,
     Household,
     HouseholdMember,
     LLMConfig,
     Recipe,
 )
-from app.service.llm.agent import RecipeAgent
 from app.service.agent_undo import (
     build_undo_preview,
     execute_undo_for_messages,
 )
+from app.service.llm.agent import RecipeAgent
 
 from .schemas import (
     AttachRecipeCard,
@@ -39,6 +40,7 @@ from .schemas import (
 )
 
 agentChatHousehold = Blueprint("agentChat", __name__)
+_logger = logging.getLogger(__name__)
 
 
 def _require_agent_enabled(household_id: int) -> None:
@@ -90,7 +92,7 @@ def create_chat(args, household_id):
         user_id=current_user.id,
         title=title,
         title_locked=bool(title),
-        title_auto=False if title else True,
+        title_auto=not title,
         persona_id=persona.id if persona else None,
     )
     chat.save()
@@ -242,9 +244,10 @@ def post_message(args, household_id, chat_id):
         )
     except InvalidUsage:
         raise
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
-        raise InvalidUsage(f"Agent failed: {exc}")
+        _logger.exception("Agent message failed")
+        raise InvalidUsage("Agent request failed")
 
     # Notify other connected clients (and the chat list view this user has
     # open in another tab / behind the chat page) that this chat now has a
@@ -256,11 +259,53 @@ def post_message(args, household_id, chat_id):
         {"chat": chat.obj_to_full_dict()},
         to="household/" + str(household_id),
     )
-
     return jsonify(
         {
             "chat": chat.obj_to_dict(),
-            "messages": [m.obj_to_dict() for m in new_messages],
+            "messages": [message.obj_to_dict() for message in new_messages],
+        }
+    )
+
+
+@agentChatHousehold.route(
+    "/chats/<int:chat_id>/messages/<int:message_id>/confirm", methods=["POST"]
+)
+@jwt_required()
+@authorize_household()
+def confirm_tool_call(household_id, chat_id, message_id):
+    _require_agent_enabled(household_id)
+    chat = _get_owned_chat(household_id, chat_id)
+    cfg = LLMConfig.find_by_household(household_id)
+    if not cfg or not cfg.is_ready():
+        raise InvalidUsage("LLM agent is not configured for this household")
+
+    pending = (
+        AgentMessage.query.filter_by(id=message_id, chat_id=chat.id)
+        .with_for_update()
+        .first()
+    )
+    if not pending or not pending.requires_confirmation:
+        raise InvalidUsage("Tool call is not pending confirmation")
+
+    agent = RecipeAgent(cfg, chat)
+    try:
+        new_messages = agent.confirm_tool_batch(pending)
+    except InvalidUsage:
+        raise
+    except Exception:
+        db.session.rollback()
+        _logger.exception("Agent tool confirmation failed")
+        raise InvalidUsage("Agent tool confirmation failed")
+
+    socketio.emit(
+        "agent_chat:update",
+        {"chat": chat.obj_to_full_dict()},
+        to="household/" + str(household_id),
+    )
+    return jsonify(
+        {
+            "chat": chat.obj_to_dict(),
+            "messages": [message.obj_to_dict() for message in new_messages],
         }
     )
 
@@ -338,7 +383,7 @@ def rewind_or_edit_message(args, household_id, chat_id, message_id):
     if action == "edit":
         target.content = new_content[:4000]
 
-    chat.updated_at = datetime.now(timezone.utc)
+    chat.updated_at = datetime.now(UTC)
     db.session.commit()
 
     new_messages: list[AgentMessage] = []
@@ -348,9 +393,10 @@ def rewind_or_edit_message(args, household_id, chat_id, message_id):
             new_messages = agent.replay_loop()
         except InvalidUsage:
             raise
-        except Exception as exc:
+        except Exception:
             db.session.rollback()
-            raise InvalidUsage(f"Agent failed: {exc}")
+            _logger.exception("Agent edit replay failed")
+            raise InvalidUsage("Agent request failed")
 
     return jsonify(
         {
@@ -430,9 +476,10 @@ def regenerate_message(args, household_id, chat_id, message_id):
         new_messages = agent.replay_loop()
     except InvalidUsage:
         raise
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
-        raise InvalidUsage(f"Agent failed: {exc}")
+        _logger.exception("Agent regeneration failed")
+        raise InvalidUsage("Agent request failed")
 
     return jsonify(
         {
@@ -470,7 +517,7 @@ def close_card(household_id, chat_id, card_id):
     if not card:
         raise NotFoundRequest()
     if card.closed_at is None:
-        card.closed_at = datetime.now(timezone.utc)
+        card.closed_at = datetime.now(UTC)
         db.session.commit()
     return jsonify({"closed": True, "id": card_id})
 

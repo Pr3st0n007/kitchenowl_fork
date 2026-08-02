@@ -19,11 +19,18 @@ DateTime? _parseUtcDateTime(dynamic raw) {
     if (parsed == null) return null;
     // ``DateTime.tryParse`` treats a string without a tz suffix as local
     // time. The server sends UTC, so reinterpret naive results as UTC.
-    return parsed.isUtc ? parsed : DateTime.utc(
-      parsed.year, parsed.month, parsed.day,
-      parsed.hour, parsed.minute, parsed.second, parsed.millisecond,
-      parsed.microsecond,
-    );
+    return parsed.isUtc
+        ? parsed
+        : DateTime.utc(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+            parsed.millisecond,
+            parsed.microsecond,
+          );
   }
   return null;
 }
@@ -91,7 +98,8 @@ class AgentMessageAttachments extends Equatable {
       files: f is List
           ? f
               .whereType<Map>()
-              .map((e) => AgentFileAttachment.fromJson(Map<String, dynamic>.from(e)))
+              .map((e) =>
+                  AgentFileAttachment.fromJson(Map<String, dynamic>.from(e)))
               .where((e) => e.id.isNotEmpty)
               .toList()
           : const [],
@@ -139,6 +147,7 @@ class AgentMessage extends Model {
   final String? toolCallsJson;
   final int? createdRecipeId;
   final bool hasUndo;
+  final bool requiresConfirmation;
   final DateTime? createdAt;
   final AgentMessageAttachments attachments;
 
@@ -152,6 +161,7 @@ class AgentMessage extends Model {
     this.toolCallsJson,
     this.createdRecipeId,
     this.hasUndo = false,
+    this.requiresConfirmation = false,
     this.createdAt,
     this.attachments = const AgentMessageAttachments(),
   });
@@ -168,6 +178,7 @@ class AgentMessage extends Model {
       toolCallsJson: map['tool_calls'] as String?,
       createdRecipeId: map['created_recipe_id'] as int?,
       hasUndo: map['has_undo'] as bool? ?? false,
+      requiresConfirmation: map['requires_confirmation'] as bool? ?? false,
       createdAt: parsed,
       attachments: AgentMessageAttachments.fromJson(
         map['attachments'] is Map
@@ -197,6 +208,7 @@ class AgentMessage extends Model {
         toolCallsJson,
         createdRecipeId,
         hasUndo,
+        requiresConfirmation,
         createdAt,
         attachments,
       ];
@@ -348,8 +360,8 @@ class AgentChat extends Model {
       cards: rawCards is List
           ? rawCards
               .whereType<Map>()
-              .map((e) =>
-                  AgentRecipeCard.fromJson(Map<String, dynamic>.from(e)))
+              .map(
+                  (e) => AgentRecipeCard.fromJson(Map<String, dynamic>.from(e)))
               .toList()
           : const [],
     );
@@ -403,10 +415,13 @@ class AgentChat extends Model {
         titleAuto: titleAuto,
         personaId: personaId,
         messageCount: newMessages.length,
-        lastUserMessage: newMessages.lastWhere(
-          (m) => m.role == AgentMessageRole.user,
-          orElse: () => const AgentMessage(role: AgentMessageRole.assistant),
-        ).content,
+        lastUserMessage: newMessages
+            .lastWhere(
+              (m) => m.role == AgentMessageRole.user,
+              orElse: () =>
+                  const AgentMessage(role: AgentMessageRole.assistant),
+            )
+            .content,
         updatedAt: updatedAt,
         lastMessageAt: lastMessageAt,
         messages: newMessages,

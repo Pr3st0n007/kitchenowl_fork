@@ -9,6 +9,7 @@ from flask_jwt_extended import current_user, jwt_required
 
 from app.errors import InvalidUsage
 from app.helpers import RequiredRights, authorize_household, validate_args
+from app.helpers.safe_error import safe_error_message
 from app.models import HouseholdMember, LLMConfig
 from app.models.llm_config import LLMProviderType
 from app.service.llm.provider import LLMError, get_provider
@@ -43,20 +44,6 @@ def _is_household_admin(household_id: int) -> bool:
 
 def _redact_config(full: dict) -> dict:
     return {k: full[k] for k in _MEMBER_VISIBLE_FIELDS if k in full}
-
-
-def _safe_llm_error_message(exc: LLMError) -> str:
-    """Return a short, single-line summary suitable for the test endpoint.
-
-    The raw upstream LLM exception messages can carry stack-trace-like
-    details. We only forward the first line, capped to 200 characters, and
-    log the full exception server-side for operators.
-    """
-    raw = (exc.args[0] if exc.args else "") or ""
-    text = str(raw) if raw else ""
-    lines = text.splitlines() if text else []
-    first_line = lines[0] if lines else ""
-    return first_line[:200] or "LLM provider error"
 
 
 @agentConfigHousehold.route("/config", methods=["GET"])
@@ -132,7 +119,9 @@ def test_config(household_id):
         )
     except LLMError as exc:
         _logger.info("LLM connection test failed: %s", exc)
-        return jsonify({"ok": False, "error": _safe_llm_error_message(exc)}), 200
+        return jsonify(
+            {"ok": False, "error": safe_error_message(exc, "LLM provider error")}
+        ), 200
 
     return jsonify(
         {

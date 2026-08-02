@@ -9,18 +9,18 @@ import logging
 import mimetypes
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app import db
 from app.config import AGENT_MAX_FILE_SIZE, AGENT_MAX_FILES_PER_MESSAGE, UPLOAD_FOLDER
 from app.errors import InvalidUsage
 from app.models import (
+    CARD_SOURCE_CREATED,
     AgentChat,
     AgentMessage,
     AgentMessageRole,
     AgentRecipeCard,
-    CARD_SOURCE_CREATED,
     File,
     LLMConfig,
 )
@@ -33,7 +33,6 @@ from app.service.agent_undo import (
     serialise_ops,
 )
 from app.service.llm.provider import LLMError, LLMProvider, get_provider
-
 
 _logger = logging.getLogger(__name__)
 
@@ -277,7 +276,7 @@ def _normalise_attached_files(
         # epoch so the Flutter client (and ``KitchenOwlJSONProvider``)
         # treat the value consistently as a tz-aware instant.
         if created_at is not None and created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
         files.append(
             {
                 "id": f.filename,
@@ -587,6 +586,8 @@ class RecipeAgent:
         attached_file_ids: list[str] | None = None,
     ) -> list[AgentMessage]:
         """Append the user message, run the loop, return the new messages."""
+        if any(message.requires_confirmation for message in self.chat.messages):
+            raise InvalidUsage("Confirm or rewind the pending tool call first")
         content = (content or "").strip()
         attachments_payload: dict[str, Any] | None = None
         recipe_ids = [int(i) for i in (attached_recipe_ids or []) if isinstance(i, int)]
@@ -627,9 +628,10 @@ class RecipeAgent:
         new_messages: list[AgentMessage] = [user_msg]
         new_messages.extend(self._run_loop())
 
-        self._maybe_auto_title(content, prior_user_count)
+        if not any(message.requires_confirmation for message in new_messages):
+            self._maybe_auto_title(content, prior_user_count)
 
-        self.chat.updated_at = datetime.now(timezone.utc)
+        self.chat.updated_at = datetime.now(UTC)
         db.session.commit()
         return new_messages
 
@@ -642,9 +644,44 @@ class RecipeAgent:
         again. No new user message is appended.
         """
         new_messages = self._run_loop()
-        self.chat.updated_at = datetime.now(timezone.utc)
+        self.chat.updated_at = datetime.now(UTC)
         db.session.commit()
         return new_messages
+
+    def confirm_tool_batch(self, pending_message: AgentMessage) -> list[AgentMessage]:
+        """Execute the exact tool-call batch associated with a pending message."""
+        assistant = next(
+            (
+                message
+                for message in reversed(self.chat.messages)
+                if message.id < pending_message.id
+                and message.role == AgentMessageRole.ASSISTANT
+                and message.tool_calls
+            ),
+            None,
+        )
+        if assistant is None:
+            raise InvalidUsage("Pending tool call has no assistant request")
+        tool_calls = _deserialise_tool_calls(assistant.tool_calls)
+        pending = [
+            message
+            for message in self.chat.messages
+            if message.role == AgentMessageRole.TOOL
+            and message.requires_confirmation
+            and any(call.get("id") == message.tool_call_id for call in tool_calls)
+        ]
+        if not pending:
+            raise InvalidUsage("Tool call is no longer pending confirmation")
+        for message in pending:
+            db.session.delete(message)
+        db.session.commit()
+
+        produced = self._execute_tool_calls(tool_calls, confirmed=True)
+        db.session.commit()
+        produced.extend(self._run_loop())
+        self.chat.updated_at = datetime.now(UTC)
+        db.session.commit()
+        return produced
 
     # --------------------------------------------------------------- titling
 
@@ -737,13 +774,13 @@ class RecipeAgent:
                 response = self.provider.chat(
                     messages, tools=tools, temperature=self.temperature_override
                 )
-            except LLMError as exc:
+            except LLMError:
                 # Surface a friendly assistant message rather than raising
                 # so the user sees what went wrong in the chat itself.
                 err_msg = AgentMessage(
                     chat=self.chat,
                     role=AgentMessageRole.ASSISTANT,
-                    content=f"⚠️ The LLM provider returned an error: {exc}",
+                    content="⚠️ The LLM provider request failed. Please try again.",
                 )
                 db.session.add(err_msg)
                 db.session.flush()
@@ -774,6 +811,8 @@ class RecipeAgent:
 
             tool_messages = self._execute_tool_calls(response.tool_calls)
             produced.extend(tool_messages)
+            if any(message.requires_confirmation for message in tool_messages):
+                return produced
 
         # Iteration cap reached -- tell the user and stop.
         timeout_msg = AgentMessage(
@@ -792,10 +831,27 @@ class RecipeAgent:
     # --------------------------------------------------------------- tool exec
 
     def _execute_tool_calls(
-        self, tool_calls: list[dict[str, Any]]
+        self, tool_calls: list[dict[str, Any]], confirmed: bool = False
     ) -> list[AgentMessage]:
         results: list[AgentMessage] = []
         tool_registry = get_agent_tools()
+
+        if not confirmed:
+            names = [
+                ((call.get("function") or {}).get("name") or "") for call in tool_calls
+            ]
+            if any(is_mutating(name) for name in names):
+                for tool_call, name in zip(tool_calls, names, strict=True):
+                    results.append(
+                        self._record_tool_message(
+                            tool_call.get("id") or "",
+                            name,
+                            {"pending_confirmation": True},
+                            created_recipe_id=None,
+                            requires_confirmation=True,
+                        )
+                    )
+                return results
 
         for tc in tool_calls:
             tool_call_id = tc.get("id") or ""
@@ -861,7 +917,7 @@ class RecipeAgent:
                     self._record_tool_message(
                         tool_call_id,
                         name,
-                        {"error": str(exc)},
+                        {"error": "Tool execution failed"},
                         created_recipe_id=None,
                     )
                 )
@@ -935,6 +991,7 @@ class RecipeAgent:
         payload: Any,
         created_recipe_id: int | None,
         undo_snapshot: str | None = None,
+        requires_confirmation: bool = False,
     ) -> AgentMessage:
         try:
             content = json.dumps(payload, ensure_ascii=False, default=str)
@@ -948,6 +1005,7 @@ class RecipeAgent:
             tool_name=name,
             created_recipe_id=created_recipe_id,
             undo_snapshot=undo_snapshot,
+            requires_confirmation=requires_confirmation,
         )
         db.session.add(msg)
         db.session.flush()

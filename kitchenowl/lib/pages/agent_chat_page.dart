@@ -20,6 +20,9 @@ import 'package:kitchenowl/widgets/recipe_markdown_body.dart';
 import 'package:kitchenowl/widgets/typing_indicator.dart';
 import 'package:tuple/tuple.dart';
 
+part 'agent_chat_page/undo_dialog.dart';
+part 'agent_chat_page/composer.dart';
+
 class AgentChatPage extends StatefulWidget {
   final Household household;
   final int chatId;
@@ -173,7 +176,9 @@ class _AgentChatPageState extends State<AgentChatPage> {
     if (!context.mounted) return;
     if (result == null || result.files.isEmpty) return;
     final picked = result.files.first;
-    if ((picked.name).isEmpty || picked.bytes == null || picked.bytes!.isEmpty) {
+    if ((picked.name).isEmpty ||
+        picked.bytes == null ||
+        picked.bytes!.isEmpty) {
       return;
     }
     // Guard against oversized files (aligned with the backend AGENT_MAX_FILE_SIZE
@@ -305,10 +310,9 @@ class _AgentChatPageState extends State<AgentChatPage> {
           // Persona can be changed until the first user message has been
           // sent. The backend seeds an assistant greeting on chat create,
           // so checking ``messages.isEmpty`` is not enough.
-          final noUserMessages = !state.messages
-              .any((m) => m.role == AgentMessageRole.user);
-          final personaListState =
-              context.watch<AgentChatListCubit?>()?.state;
+          final noUserMessages =
+              !state.messages.any((m) => m.role == AgentMessageRole.user);
+          final personaListState = context.watch<AgentChatListCubit?>()?.state;
           // Only consider the persona switcher "available" once the chat
           // payload has been loaded; otherwise the banner briefly flashes
           // a default-persona label before the real chat data arrives.
@@ -371,134 +375,140 @@ class _AgentChatPageState extends State<AgentChatPage> {
                   children: [
                     if (state.canRetryLast || state.error != null)
                       Material(
-                      color: state.error == 'cancelled'
-                          ? Theme.of(context).colorScheme.surfaceContainerHighest
-                          : Theme.of(context).colorScheme.errorContainer,
-                      child: ListTile(
-                        leading: Icon(
-                          state.error == 'cancelled'
-                              ? Icons.stop_circle_outlined
-                              : Icons.error_outline,
-                          color: state.error == 'cancelled'
-                              ? Theme.of(context).colorScheme.onSurface
-                              : Theme.of(context).colorScheme.onErrorContainer,
-                        ),
-                        title: Text(
-                          state.error == 'cancelled'
-                              ? loc.agentSendCancelled
-                              : loc.agentSendFailed,
-                          style: TextStyle(
+                        color: state.error == 'cancelled'
+                            ? Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                            : Theme.of(context).colorScheme.errorContainer,
+                        child: ListTile(
+                          leading: Icon(
+                            state.error == 'cancelled'
+                                ? Icons.stop_circle_outlined
+                                : Icons.error_outline,
                             color: state.error == 'cancelled'
                                 ? Theme.of(context).colorScheme.onSurface
                                 : Theme.of(context)
                                     .colorScheme
                                     .onErrorContainer,
                           ),
-                        ),
-                        trailing: TextButton(
-                          onPressed: state.sending || !state.canRetryLast
-                              ? null
-                              : () async {
-                                  await _cubit.retryLastUserMessage();
-                                  _scrollToEnd();
-                                },
-                          child: Text(loc.retry),
-                        ),
-                      ),
-                    ),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        if (state.loading && state.messages.isEmpty)
-                          const Center(child: CircularProgressIndicator())
-                        else if (isEmpty)
-                          _EmptyChatHero(
-                            persona: persona,
-                            onPrompt: (s) async {
-                              await _cubit.sendMessage(s);
-                              _scrollToEnd();
-                            },
-                          )
-                        else
-                          Builder(builder: (context) {
-                            final argsByCallId =
-                                buildToolArgumentsIndex(state.messages);
-                            final lastAssistantIdx = state.messages
-                                .lastIndexWhere((m) =>
-                                    m.role == AgentMessageRole.assistant);
-                            return ListView.builder(
-                              controller: _scrollCtrl,
-                              padding:
-                                  const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                              itemCount: state.messages.length +
-                                  (state.sending ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index >= state.messages.length) {
-                                  return const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 8),
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: _AssistantTypingBubble(),
-                                    ),
-                                  );
-                                }
-                                final msg = state.messages[index];
-                                final isLastAssistant = !state.sending &&
-                                    index == lastAssistantIdx &&
-                                    msg.role == AgentMessageRole.assistant;
-                                return _MessageBubble(
-                                  message: msg,
-                                  household: widget.household,
-                                  isLastAssistant: isLastAssistant,
-                                  argumentsByToolCallId: argsByCallId,
-                                  onSuggestionTap: (s) async {
-                                    await _cubit.sendMessage(s);
-                                    _scrollToEnd();
-                                  },
-                                );
-                              },
-                            );
-                          }),
-                        if (_showJumpToBottom)
-                          Positioned(
-                            right: 12,
-                            bottom: 8,
-                            child: FloatingActionButton.small(
-                              onPressed: () => _scrollToEnd(),
-                              child: const Icon(Icons.arrow_downward),
+                          title: Text(
+                            state.error == 'cancelled'
+                                ? loc.agentSendCancelled
+                                : loc.agentSendFailed,
+                            style: TextStyle(
+                              color: state.error == 'cancelled'
+                                  ? Theme.of(context).colorScheme.onSurface
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onErrorContainer,
                             ),
                           ),
-                      ],
+                          trailing: TextButton(
+                            onPressed: state.sending || !state.canRetryLast
+                                ? null
+                                : () async {
+                                    await _cubit.retryLastUserMessage();
+                                    _scrollToEnd();
+                                  },
+                            child: Text(loc.retry),
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          if (state.loading && state.messages.isEmpty)
+                            const Center(child: CircularProgressIndicator())
+                          else if (isEmpty)
+                            _EmptyChatHero(
+                              persona: persona,
+                              onPrompt: (s) async {
+                                await _cubit.sendMessage(s);
+                                _scrollToEnd();
+                              },
+                            )
+                          else
+                            Builder(builder: (context) {
+                              final argsByCallId =
+                                  buildToolArgumentsIndex(state.messages);
+                              final lastAssistantIdx = state.messages
+                                  .lastIndexWhere((m) =>
+                                      m.role == AgentMessageRole.assistant);
+                              return ListView.builder(
+                                controller: _scrollCtrl,
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                                itemCount: state.messages.length +
+                                    (state.sending ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (index >= state.messages.length) {
+                                    return const Padding(
+                                      padding:
+                                          EdgeInsets.symmetric(vertical: 8),
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: _AssistantTypingBubble(),
+                                      ),
+                                    );
+                                  }
+                                  final msg = state.messages[index];
+                                  final isLastAssistant = !state.sending &&
+                                      index == lastAssistantIdx &&
+                                      msg.role == AgentMessageRole.assistant;
+                                  return _MessageBubble(
+                                    message: msg,
+                                    household: widget.household,
+                                    isLastAssistant: isLastAssistant,
+                                    argumentsByToolCallId: argsByCallId,
+                                    onSuggestionTap: (s) async {
+                                      await _cubit.sendMessage(s);
+                                      _scrollToEnd();
+                                    },
+                                    onConfirmToolCall: _cubit.confirmToolCall,
+                                  );
+                                },
+                              );
+                            }),
+                          if (_showJumpToBottom)
+                            Positioned(
+                              right: 12,
+                              bottom: 8,
+                              child: FloatingActionButton.small(
+                                onPressed: () => _scrollToEnd(),
+                                child: const Icon(Icons.arrow_downward),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Divider(height: 1),
-                  if (canChangePersona)
-                    _PersonaSwitcherBanner(
-                      persona: persona,
-                      onTap: () => _showPersonaPicker(context, persona),
+                    const Divider(height: 1),
+                    if (canChangePersona)
+                      _PersonaSwitcherBanner(
+                        persona: persona,
+                        onTap: () => _showPersonaPicker(context, persona),
+                      ),
+                    _Composer(
+                      controller: _inputCtrl,
+                      sending: state.sending,
+                      onSubmit: _send,
+                      onCancel: _cubit.cancelSend,
+                      hint: loc.agentInputHint,
+                      attachedRecipeIds: state.attachedRecipeIds,
+                      attachedItemIds: state.attachedItemIds,
+                      attachedRecipeNames: state.attachedRecipeNames,
+                      attachedItemNames: state.attachedItemNames,
+                      attachedFiles:
+                          state.attachedFiles.map((f) => f.filename).toList(),
+                      onRemoveRecipe: _cubit.removeAttachedRecipe,
+                      onRemoveItem: _cubit.removeAttachedItem,
+                      onRemoveFile: _cubit.removeAttachedFile,
+                      onPickRecipe: () => _pickRecipe(context),
+                      onPickItem: () => _pickItem(context),
+                      onPickImage: () => _pickImageAttachment(context),
+                      onPickPdf: () => _pickPdfAttachment(context),
                     ),
-                  _Composer(
-                    controller: _inputCtrl,
-                    sending: state.sending,
-                    onSubmit: _send,
-                    onCancel: _cubit.cancelSend,
-                    hint: loc.agentInputHint,
-                    attachedRecipeIds: state.attachedRecipeIds,
-                    attachedItemIds: state.attachedItemIds,
-                    attachedRecipeNames: state.attachedRecipeNames,
-                    attachedItemNames: state.attachedItemNames,
-                    attachedFiles:
-                        state.attachedFiles.map((f) => f.filename).toList(),
-                    onRemoveRecipe: _cubit.removeAttachedRecipe,
-                    onRemoveItem: _cubit.removeAttachedItem,
-                    onRemoveFile: _cubit.removeAttachedFile,
-                    onPickRecipe: () => _pickRecipe(context),
-                    onPickItem: () => _pickItem(context),
-                    onPickImage: () => _pickImageAttachment(context),
-                    onPickPdf: () => _pickPdfAttachment(context),
-                  ),
-                ],
-              );
+                  ],
+                );
                 final recipePanel = _AgentCardsPanel(
                   cards: state.cards,
                   household: widget.household,
@@ -599,8 +609,7 @@ class _PersonaSwitcherBanner extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
               Icon(personaIconFor(persona),
@@ -737,6 +746,7 @@ class _MessageBubble extends StatelessWidget {
   final Household household;
   final bool isLastAssistant;
   final ValueChanged<String>? onSuggestionTap;
+  final Future<void> Function(int messageId)? onConfirmToolCall;
   final Map<String, Map<String, dynamic>> argumentsByToolCallId;
 
   const _MessageBubble({
@@ -744,6 +754,7 @@ class _MessageBubble extends StatelessWidget {
     required this.household,
     this.isLastAssistant = false,
     this.onSuggestionTap,
+    this.onConfirmToolCall,
     this.argumentsByToolCallId = const {},
   });
 
@@ -885,6 +896,9 @@ class _MessageBubble extends StatelessWidget {
               ? null
               : argumentsByToolCallId[message.toolCallId!],
           onOpenRecipe: (recipeId) => _openRecipe(context, recipeId),
+          onConfirm: message.id == null || onConfirmToolCall == null
+              ? null
+              : () => onConfirmToolCall!(message.id!),
         ),
       );
     }
@@ -946,8 +960,7 @@ class _MessageBubble extends StatelessWidget {
                           _MessageActionMenu(
                             canEdit: canEdit,
                             canRegenerate: canRegenerate,
-                            onEdit: () =>
-                                _runEdit(context, messageId, content),
+                            onEdit: () => _runEdit(context, messageId, content),
                             onRegenerate: () =>
                                 _runRegenerate(context, messageId),
                           ),
@@ -959,8 +972,7 @@ class _MessageBubble extends StatelessWidget {
                           _MessageActionMenu(
                             canEdit: canEdit,
                             canRegenerate: canRegenerate,
-                            onEdit: () =>
-                                _runEdit(context, messageId, content),
+                            onEdit: () => _runEdit(context, messageId, content),
                             onRegenerate: () =>
                                 _runRegenerate(context, messageId),
                           ),
@@ -1072,382 +1084,6 @@ class _MessageActionMenu extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-enum _UndoMode { edit, regenerate }
-
-class _UndoDialogResult {
-  final List<int> skipUndoIds;
-  final String? newContent;
-
-  const _UndoDialogResult({required this.skipUndoIds, this.newContent});
-}
-
-class _AgentUndoDialog extends StatefulWidget {
-  final _UndoMode mode;
-  final AgentRewindPreview preview;
-  final String? initialContent;
-
-  const _AgentUndoDialog({
-    required this.mode,
-    required this.preview,
-    this.initialContent,
-  });
-
-  @override
-  State<_AgentUndoDialog> createState() => _AgentUndoDialogState();
-}
-
-class _AgentUndoDialogState extends State<_AgentUndoDialog> {
-  /// `messageId` -> apply-this-undo? (true means *do* undo). Initialised true
-  /// for reversible ops, false for non-reversible (server will block them
-  /// anyway so flipping the box wouldn't help).
-  late final Map<int, bool> _applyUndo;
-  late final TextEditingController _editCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _applyUndo = {
-      for (final p in widget.preview.preview) p.messageId: p.reversible,
-    };
-    _editCtrl = TextEditingController(text: widget.initialContent ?? '');
-  }
-
-  @override
-  void dispose() {
-    _editCtrl.dispose();
-    super.dispose();
-  }
-
-  String? _reasonLabel(BuildContext context, String? reason) {
-    final loc = AppLocalizations.of(context)!;
-    switch (reason) {
-      case 'conflict':
-        return loc.agentUndoConflict;
-      case 'irreversible':
-        return loc.agentUndoIrreversible;
-      case 'missing':
-        return loc.agentUndoMissing;
-      case 'failed':
-        return loc.agentUndoFailed;
-      default:
-        return null;
-    }
-  }
-
-  String _description(BuildContext context) {
-    final loc = AppLocalizations.of(context)!;
-    switch (widget.mode) {
-      case _UndoMode.edit:
-        return loc.agentEditDescription;
-      case _UndoMode.regenerate:
-        return loc.agentRegenerateDescription;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
-    final items = widget.preview.preview;
-    final isEdit = widget.mode == _UndoMode.edit;
-
-    return AlertDialog(
-      title: Text(loc.agentUndoTitle),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_description(context)),
-              if (isEdit) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _editCtrl,
-                  autofocus: true,
-                  maxLines: 5,
-                  minLines: 2,
-                  decoration: InputDecoration(
-                    labelText: loc.agentEditedMessage,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              if (items.isEmpty)
-                Text(
-                  loc.agentUndoEmpty,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                )
-              else
-                ...items.map((item) {
-                  final reasonText = _reasonLabel(context, item.reason);
-                  final apply = _applyUndo[item.messageId] ?? false;
-                  return CheckboxListTile(
-                    value: apply,
-                    onChanged: item.reversible
-                        ? (v) => setState(
-                              () => _applyUndo[item.messageId] = v ?? false,
-                            )
-                        : null,
-                    title: Text(
-                      item.entityName.isNotEmpty
-                          ? item.entityName
-                          : item.tool,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      reasonText ?? item.tool,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: item.reversible
-                            ? theme.colorScheme.onSurfaceVariant
-                            : theme.colorScheme.error,
-                      ),
-                    ),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  );
-                }),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(loc.cancel),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (isEdit) {
-              final newText = _editCtrl.text.trim();
-              if (newText.isEmpty) return;
-            }
-            final skip = <int>[
-              for (final entry in _applyUndo.entries)
-                if (!entry.value) entry.key,
-            ];
-            Navigator.of(context).pop(_UndoDialogResult(
-              skipUndoIds: skip,
-              newContent: isEdit ? _editCtrl.text : null,
-            ));
-          },
-          child: Text(isEdit ? loc.send : loc.confirm),
-        ),
-      ],
-    );
-  }
-}
-
-class _Composer extends StatelessWidget {
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSubmit;
-  final VoidCallback? onCancel;
-  final String hint;
-  final List<int> attachedRecipeIds;
-  final List<int> attachedItemIds;
-  final Map<int, String> attachedRecipeNames;
-  final Map<int, String> attachedItemNames;
-  final List<String> attachedFiles;
-  final ValueChanged<int> onRemoveRecipe;
-  final ValueChanged<int> onRemoveItem;
-  final ValueChanged<String> onRemoveFile;
-  final VoidCallback onPickRecipe;
-  final VoidCallback onPickItem;
-  final VoidCallback onPickImage;
-  final VoidCallback onPickPdf;
-
-  const _Composer({
-    required this.controller,
-    required this.sending,
-    required this.onSubmit,
-    this.onCancel,
-    required this.hint,
-    required this.attachedRecipeIds,
-    required this.attachedItemIds,
-    required this.attachedRecipeNames,
-    required this.attachedItemNames,
-    required this.attachedFiles,
-    required this.onRemoveRecipe,
-    required this.onRemoveItem,
-    required this.onRemoveFile,
-    required this.onPickRecipe,
-    required this.onPickItem,
-    required this.onPickImage,
-    required this.onPickPdf,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context)!;
-    final hasAttachments =
-      attachedRecipeIds.isNotEmpty ||
-      attachedItemIds.isNotEmpty ||
-      attachedFiles.isNotEmpty;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (hasAttachments)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (final rid in attachedRecipeIds)
-                    InputChip(
-                      avatar: const Icon(Icons.menu_book_outlined, size: 16),
-                      label: Text(attachedRecipeNames[rid] ?? '#$rid'),
-                      onDeleted: sending ? null : () => onRemoveRecipe(rid),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  for (final iid in attachedItemIds)
-                    InputChip(
-                      avatar: const Icon(Icons.shopping_basket_outlined,
-                          size: 16),
-                      label: Text(attachedItemNames[iid] ?? '#$iid'),
-                      onDeleted: sending ? null : () => onRemoveItem(iid),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  for (final fileName in attachedFiles)
-                    InputChip(
-                      avatar: Icon(
-                        fileName.toLowerCase().endsWith('.pdf')
-                            ? Icons.picture_as_pdf_outlined
-                            : Icons.image_outlined,
-                        size: 16,
-                      ),
-                      label: Text(fileName),
-                      onDeleted: sending ? null : () => onRemoveFile(fileName),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                ],
-              ),
-            ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              PopupMenuButton<String>(
-                tooltip: loc.agentAttachContext,
-                icon: const Icon(Icons.attach_file_rounded),
-                onSelected: (v) {
-                  switch (v) {
-                    case 'recipe':
-                      onPickRecipe();
-                      break;
-                    case 'item':
-                      onPickItem();
-                      break;
-                    case 'image':
-                      onPickImage();
-                      break;
-                    case 'pdf':
-                      onPickPdf();
-                      break;
-                  }
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'recipe',
-                    child: Row(children: [
-                      const Icon(Icons.menu_book_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(loc.agentAttachRecipe),
-                    ]),
-                  ),
-                  PopupMenuItem(
-                    value: 'item',
-                    child: Row(children: [
-                      const Icon(Icons.shopping_basket_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(loc.agentAttachItem),
-                    ]),
-                  ),
-                  const PopupMenuItem(
-                    value: 'image',
-                    child: _AttachImageMenuLabel(),
-                  ),
-                  const PopupMenuItem(
-                    value: 'pdf',
-                    child: _AttachPdfMenuLabel(),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  minLines: 1,
-                  maxLines: 6,
-                  enabled: !sending,
-                  decoration: InputDecoration(
-                    hintText: hint,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                  ),
-                  textInputAction: TextInputAction.newline,
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton.filled(
-                tooltip: sending ? loc.cancel : null,
-                icon: sending
-                    ? const Icon(Icons.stop_rounded)
-                    : const Icon(Icons.send_rounded),
-                onPressed: sending
-                    ? (onCancel ?? () {})
-                    : onSubmit,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AttachImageMenuLabel extends StatelessWidget {
-  const _AttachImageMenuLabel();
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context)!;
-    return Row(children: [
-      const Icon(Icons.image_outlined, size: 18),
-      const SizedBox(width: 8),
-      Text(loc.agentAttachImage),
-    ]);
-  }
-}
-
-class _AttachPdfMenuLabel extends StatelessWidget {
-  const _AttachPdfMenuLabel();
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context)!;
-    return Row(children: [
-      const Icon(Icons.picture_as_pdf_outlined, size: 18),
-      const SizedBox(width: 8),
-      Text(loc.agentAttachPdf),
-    ]);
   }
 }
 
@@ -1568,8 +1204,9 @@ class _AgentCardsPanelState extends State<_AgentCardsPanel> {
         list.sort((a, b) => a.id.compareTo(b.id));
         break;
       case _CardSort.title:
-        list.sort((a, b) =>
-            (a.title ?? '').toLowerCase().compareTo((b.title ?? '').toLowerCase()));
+        list.sort((a, b) => (a.title ?? '')
+            .toLowerCase()
+            .compareTo((b.title ?? '').toLowerCase()));
         break;
       case _CardSort.group:
         list.sort((a, b) {
@@ -1729,8 +1366,7 @@ class _AgentCardsPanelState extends State<_AgentCardsPanel> {
     );
   }
 
-  int _flattenLength(
-      List<MapEntry<String?, List<AgentRecipeCard>>> sections) {
+  int _flattenLength(List<MapEntry<String?, List<AgentRecipeCard>>> sections) {
     if (_grouping == _CardGrouping.none) {
       return sections.fold<int>(0, (acc, s) => acc + s.value.length);
     }
@@ -1850,9 +1486,8 @@ class _AgentCardTileState extends State<_AgentCardTile> {
   @override
   void initState() {
     super.initState();
-    _future = widget.cached != null
-        ? Future.value(widget.cached!)
-        : widget.loader();
+    _future =
+        widget.cached != null ? Future.value(widget.cached!) : widget.loader();
   }
 
   @override
@@ -1976,8 +1611,7 @@ class _AgentCardTileState extends State<_AgentCardTile> {
                         if (loading)
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Center(
-                                child: CircularProgressIndicator()),
+                            child: Center(child: CircularProgressIndicator()),
                           )
                         else if (failed)
                           Padding(
@@ -2011,8 +1645,7 @@ class _AgentCardTileState extends State<_AgentCardTile> {
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 2),
                                 child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       '\u2022 ',
@@ -2039,7 +1672,8 @@ class _AgentCardTileState extends State<_AgentCardTile> {
                                             if (it.optional)
                                               TextSpan(
                                                 text: ' (${loc.optional})',
-                                                style: theme.textTheme.labelSmall
+                                                style: theme
+                                                    .textTheme.labelSmall
                                                     ?.copyWith(
                                                   color: theme.colorScheme
                                                       .onSurfaceVariant,
@@ -2244,8 +1878,7 @@ class _AgentRecipePickerSheetState extends State<_AgentRecipePickerSheet> {
   }
 
   Future<void> _load() async {
-    final list =
-        await ApiService.getInstance().getRecipes(widget.household);
+    final list = await ApiService.getInstance().getRecipes(widget.household);
     if (!mounted) return;
     setState(() {
       _recipes = list ?? const [];
@@ -2259,13 +1892,12 @@ class _AgentRecipePickerSheetState extends State<_AgentRecipePickerSheet> {
     final filtered = _query.isEmpty
         ? _recipes
         : _recipes
-            .where((r) =>
-                (r.name).toLowerCase().contains(_query.toLowerCase()))
+            .where((r) => (r.name).toLowerCase().contains(_query.toLowerCase()))
             .toList();
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: SizedBox(
           height: MediaQuery.of(context).size.height * 0.7,
           child: Column(
@@ -2306,8 +1938,7 @@ class _AgentRecipePickerSheetState extends State<_AgentRecipePickerSheet> {
                             itemBuilder: (_, i) {
                               final r = filtered[i];
                               return ListTile(
-                                leading:
-                                    const Icon(Icons.menu_book_outlined),
+                                leading: const Icon(Icons.menu_book_outlined),
                                 title: Text(r.name),
                                 subtitle: r.description.isNotEmpty
                                     ? Text(r.description,
@@ -2360,8 +1991,8 @@ class _AgentItemPickerSheetState extends State<_AgentItemPickerSheet> {
     final loc = AppLocalizations.of(context)!;
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: SizedBox(
           height: MediaQuery.of(context).size.height * 0.7,
           child: Column(
@@ -2403,8 +2034,8 @@ class _AgentItemPickerSheetState extends State<_AgentItemPickerSheet> {
                             itemBuilder: (_, i) {
                               final it = _items[i];
                               return ListTile(
-                                leading: const Icon(
-                                    Icons.shopping_basket_outlined),
+                                leading:
+                                    const Icon(Icons.shopping_basket_outlined),
                                 title: Text(it.name),
                                 onTap: () => Navigator.of(context).pop(it),
                               );

@@ -222,6 +222,26 @@ extension AgentApi on ApiService {
     );
   }
 
+  Future<AgentMessageResponse?> confirmAgentToolCall(
+    Household household,
+    int chatId,
+    int messageId,
+  ) async {
+    final res = await post(
+      '${_agentBase(household)}/chats/$chatId/messages/$messageId/confirm',
+      '{}',
+      timeout: const Duration(minutes: 2),
+    );
+    if (res.statusCode != 200) return null;
+    final body = Map<String, dynamic>.from(jsonDecode(res.body));
+    return AgentMessageResponse(
+      chat: AgentChat.fromJson(Map<String, dynamic>.from(body['chat'])),
+      messages: List.from(body['messages'] as List)
+          .map((e) => AgentMessage.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+
   Future<bool> deleteAgentChat(Household household, int chatId) async {
     final res = await delete('${_agentBase(household)}/chats/$chatId');
     return res.statusCode == 200;

@@ -16,6 +16,7 @@ class AgentToolCallCard extends StatefulWidget {
 
   /// Optional callback to open a recipe id referenced by this tool run.
   final ValueChanged<int>? onOpenRecipe;
+  final Future<void> Function()? onConfirm;
 
   const AgentToolCallCard({
     super.key,
@@ -23,6 +24,7 @@ class AgentToolCallCard extends StatefulWidget {
     required this.household,
     this.arguments,
     this.onOpenRecipe,
+    this.onConfirm,
   });
 
   @override
@@ -273,6 +275,15 @@ class _AgentToolCallCardState extends State<AgentToolCallCard> {
               ],
             ),
           ],
+          if (message.requiresConfirmation && widget.onConfirm != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: FilledButton.icon(
+                icon: const Icon(Icons.check),
+                label: Text(loc.confirm),
+                onPressed: widget.onConfirm,
+              ),
+            ),
         ],
       ),
     );

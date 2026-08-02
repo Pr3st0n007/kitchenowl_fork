@@ -126,8 +126,7 @@ def test_chat_flow_runs_agent_and_creates_recipe(
     chat_id = res.get_json()["id"]
 
     # 2. Script a fake provider: first turn -> tool call to create_recipe;
-    #    second turn -> plain assistant reply. The agent loop should persist
-    #    everything and link the created recipe id on the tool message.
+    #    second turn -> plain assistant reply after explicit confirmation.
     tool_call = {
         "id": "call_1",
         "type": "function",
@@ -171,12 +170,36 @@ def test_chat_flow_runs_agent_and_creates_recipe(
     assert res.status_code == 200, res.get_data(as_text=True)
     body = res.get_json()
     roles = [m["role"] for m in body["messages"]]
-    assert roles == ["user", "assistant", "tool", "assistant"]
+    assert roles == ["user", "assistant", "tool"]
     tool_msg = body["messages"][2]
     assert tool_msg["tool_name"] == "create_recipe"
-    assert tool_msg["created_recipe_id"]
-    final_assistant = body["messages"][-1]
+    assert tool_msg["requires_confirmation"] is True
+    assert tool_msg["created_recipe_id"] is None
+
+    res = user_client_with_household.get(f"/api/household/{household_id}/recipe")
+    assert not any(r["name"] == "Spaghetti Aglio e Olio" for r in res.get_json())
+
+    blocked = user_client_with_household.post(
+        f"{_chats_path(household_id)}/{chat_id}/messages",
+        json={"content": "continue without confirming"},
+    )
+    assert blocked.status_code == 400
+
+    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat):
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages/{tool_msg['id']}/confirm"
+        )
+    assert res.status_code == 200, res.get_data(as_text=True)
+    confirmed = res.get_json()["messages"]
+    assert [m["role"] for m in confirmed] == ["tool", "assistant"]
+    assert confirmed[0]["created_recipe_id"]
+    final_assistant = confirmed[-1]
     assert "Fertig" in (final_assistant["content"] or "")
+
+    repeated = user_client_with_household.post(
+        f"{_chats_path(household_id)}/{chat_id}/messages/{tool_msg['id']}/confirm"
+    )
+    assert repeated.status_code == 400
 
     # 3. Verify the recipe really exists in the household
     res = user_client_with_household.get(f"/api/household/{household_id}/recipe")
@@ -299,17 +322,16 @@ def test_chat_message_with_pdf_attachment_extracts_text(
 
     with patch(
         "app.service.llm.agent._extract_pdf_text", return_value="2 Eier\n1 TL Salz"
+    ), patch(
+        "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
     ):
-        with patch(
-            "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
-        ):
-            res = user_client_with_household.post(
-                f"{_chats_path(household_id)}/{chat_id}/messages",
-                json={
-                    "content": "",
-                    "attached_files": [uploaded],
-                },
-            )
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages",
+            json={
+                "content": "",
+                "attached_files": [uploaded],
+            },
+        )
 
     assert res.status_code == 200, res.get_data(as_text=True)
     user_msg = next(m for m in captured["messages"] if m["role"] == "user")
@@ -418,8 +440,9 @@ def test_agent_attached_files_are_not_deleted_as_unused(
     model relation (recipe / household / expense / profile picture).
     """
     from unittest.mock import patch
-    from app.service.delete_unused import deleteUnusedFiles
+
     from app.models import File
+    from app.service.delete_unused import deleteUnusedFiles
 
     _configure_ready_agent(user_client_with_household, household_id)
     res = user_client_with_household.post(_chats_path(household_id), json={})
@@ -491,7 +514,8 @@ def test_chat_message_surfaces_provider_error(user_client_with_household, househ
     assert res.status_code == 200
     messages = res.get_json()["messages"]
     assert messages[-1]["role"] == "assistant"
-    assert "network exploded" in messages[-1]["content"]
+    assert "network exploded" not in messages[-1]["content"]
+    assert "provider request failed" in messages[-1]["content"]
 
 
 def test_chat_is_private_to_creating_user(
@@ -652,6 +676,14 @@ def test_agent_overrides_household_id_arg(user_client_with_household, household_
             res = user_client_with_household.post(
                 f"{_chats_path(household_id)}/{chat_id}/messages",
                 json={"content": "create something"},
+            )
+            pending = next(
+                message
+                for message in res.get_json()["messages"]
+                if message["requires_confirmation"]
+            )
+            res = user_client_with_household.post(
+                f"{_chats_path(household_id)}/{chat_id}/messages/{pending['id']}/confirm"
             )
     finally:
         TOOLS["create_recipe"] = (TOOLS["create_recipe"][0], real_create)
@@ -1014,6 +1046,14 @@ def _create_chat_with_recipe(client, household_id):
             f"{_chats_path(household_id)}/{chat_id}/messages",
             json={"content": "make pasta"},
         )
+        pending = next(
+            message
+            for message in res.get_json()["messages"]
+            if message["requires_confirmation"]
+        )
+        res = client.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages/{pending['id']}/confirm"
+        )
     assert res.status_code == 200, res.get_data(as_text=True)
     body = res.get_json()
     msgs = body["messages"]
@@ -1308,6 +1348,14 @@ def test_rewind_after_create_then_update_in_same_chat_deletes_recipe(
             f"{_chats_path(household_id)}/{chat_id}/messages",
             json={"content": "rename it"},
         )
+        pending = next(
+            message
+            for message in res.get_json()["messages"]
+            if message["requires_confirmation"]
+        )
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages/{pending['id']}/confirm"
+        )
     assert res.status_code == 200, res.get_data(as_text=True)
 
     res = user_client_with_household.get(f"/api/recipe/{recipe_id}")
@@ -1392,6 +1440,14 @@ def test_update_recipe_undo_restores_previous_name(
         res = user_client_with_household.post(
             f"{_chats_path(household_id)}/{chat_id}/messages",
             json={"content": "rename it"},
+        )
+        pending = next(
+            message
+            for message in res.get_json()["messages"]
+            if message["requires_confirmation"]
+        )
+        res = user_client_with_household.post(
+            f"{_chats_path(household_id)}/{chat_id}/messages/{pending['id']}/confirm"
         )
     assert res.status_code == 200, res.get_data(as_text=True)
 

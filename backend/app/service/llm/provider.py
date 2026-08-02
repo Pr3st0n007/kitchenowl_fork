@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
+import socket
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
 from app.models.llm_config import LLMConfig, LLMProviderType
 
-
 _logger = logging.getLogger(__name__)
+_BUILTIN_PROVIDER_HOSTS = {
+    LLMProviderType.OPENAI: {"api.openai.com"},
+    LLMProviderType.GEMINI: {"generativelanguage.googleapis.com"},
+}
 
 
 class LLMError(Exception):
@@ -31,13 +36,23 @@ def _parse_allowed_hosts(env_value: str | None) -> set[str]:
     return {h.strip().lower() for h in env_value.split(",") if h.strip()}
 
 
-def _hostname_of(url: str | None) -> str | None:
-    if not url:
-        return None
+def validate_endpoint_url(url: str) -> str:
+    """Validate an outbound HTTP endpoint and return its normalized hostname."""
     try:
-        return urlparse(url).hostname
-    except Exception:
-        return None
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+    except ValueError as exc:
+        raise LLMError("LLM endpoint URL is invalid") from exc
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        raise LLMError("LLM endpoint URL must use http or https and include a host")
+    if parsed.username or parsed.password:
+        raise LLMError("LLM endpoint URL must not contain credentials")
+    return hostname.lower()
+
+
+def _is_non_public_address(value: str) -> bool:
+    address = ipaddress.ip_address(value)
+    return not address.is_global
 
 
 def _model_id_for(config: LLMConfig) -> str:
@@ -85,19 +100,37 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def _enforce_outbound_allowlist(self) -> None:
         allowed = _parse_allowed_hosts(os.getenv("LLM_ALLOWED_HOSTS"))
-        if not allowed:
-            return
-        hostname = _hostname_of(self.config.effective_base_url())
+        base_url = self.config.effective_base_url()
+        hostname = validate_endpoint_url(base_url) if base_url else None
         # Native Gemini route doesn't need a base URL but always hits Google.
         if hostname is None and self.config.provider == LLMProviderType.GEMINI:
             hostname = "generativelanguage.googleapis.com"
         if hostname is None:
-            raise LLMError(
-                "LLM_ALLOWED_HOSTS is set but the configured provider has no base URL"
-            )
-        if hostname.lower() not in allowed:
+            raise LLMError("The configured LLM provider has no endpoint URL")
+        if allowed:
+            if hostname not in allowed:
+                raise LLMError(
+                    f"LLM endpoint host '{hostname}' is not in LLM_ALLOWED_HOSTS"
+                )
+            return
+        if hostname not in _BUILTIN_PROVIDER_HOSTS.get(self.config.provider, set()):
             raise LLMError(
                 f"LLM endpoint host '{hostname}' is not in LLM_ALLOWED_HOSTS"
+            )
+
+        try:
+            addresses = {
+                item[4][0]
+                for item in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+            }
+        except socket.gaierror as exc:
+            raise LLMError(
+                f"LLM endpoint host '{hostname}' cannot be resolved"
+            ) from exc
+        if any(_is_non_public_address(address) for address in addresses):
+            raise LLMError(
+                f"LLM endpoint host '{hostname}' resolves to a non-public address; "
+                "add it to LLM_ALLOWED_HOSTS to allow it explicitly"
             )
 
     # ------------------------------------------------------------------ chat

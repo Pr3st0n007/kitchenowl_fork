@@ -11,6 +11,7 @@ from flask_jwt_extended import jwt_required
 from app import db
 from app.config import BACKEND_VERSION
 from app.errors import ForbiddenRequest, InvalidUsage, NotFoundRequest
+from app.helpers.safe_error import safe_error_message
 from app.service.agent_tools import TOOLS
 
 mcp = Blueprint("mcp", __name__)
@@ -24,22 +25,6 @@ _SAFE_EXCEPTIONS = (InvalidUsage, NotFoundRequest, ForbiddenRequest, ValueError)
 
 def _jsonrpc_ok(id_value: Any, result: Any):
     return jsonify({"jsonrpc": "2.0", "id": id_value, "result": result})
-
-
-def _safe_exception_message(exc: BaseException) -> str:
-    """Return a single-line, length-capped summary of ``exc`` for clients.
-
-    The MCP protocol surfaces error messages directly to the caller. Some of
-    KitchenOwl's exceptions carry deliberately user-facing text (e.g.
-    ``ValueError("Unsupported website")``); we forward only that, stripped of
-    line breaks and capped to 200 characters, so we never leak stack-trace
-    details accidentally embedded in an exception's repr.
-    """
-    raw = exc.args[0] if exc.args else ""
-    text = str(raw) if raw else ""
-    lines = text.splitlines() if text else []
-    first_line = lines[0] if lines else ""
-    return first_line[:200] or type(exc).__name__
 
 
 def _jsonrpc_err(id_value: Any, code: int, message: str):
@@ -112,7 +97,7 @@ def _handle_jsonrpc(body: dict[str, Any]):
         return _jsonrpc_err(id_value, -32601, f"Method not found: {method}")
     except _SAFE_EXCEPTIONS as e:
         db.session.rollback()
-        return _jsonrpc_err(id_value, -32000, _safe_exception_message(e))
+        return _jsonrpc_err(id_value, -32000, safe_error_message(e, type(e).__name__))
     except Exception:
         db.session.rollback()
         # Avoid leaking internal exception details to MCP clients; log on the

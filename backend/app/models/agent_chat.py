@@ -8,8 +8,8 @@ context can be replayed when the user sends the next message.
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Self, List, cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Mapped
@@ -28,7 +28,7 @@ def _to_utc_ms(value: datetime | None) -> int | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return int(round(value.timestamp() * 1000))
 
 
@@ -36,8 +36,8 @@ Model = db.Model
 if TYPE_CHECKING:
     from app.helpers.db_model_base import DbModelBase
     from app.models import Household, Recipe, User
-    from app.models.agent_recipe_card import AgentRecipeCard
     from app.models.agent_persona import AgentPersona
+    from app.models.agent_recipe_card import AgentRecipeCard
 
     Model = DbModelBase
 
@@ -73,20 +73,20 @@ class AgentChat(Model):
         index=True,
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship("Household", uselist=False),
     )
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship("User", uselist=False),
     )
-    persona: Mapped["AgentPersona | None"] = cast(
+    persona: Mapped[AgentPersona | None] = cast(
         Mapped["AgentPersona | None"],
         db.relationship("AgentPersona", uselist=False),
     )
-    messages: Mapped[List["AgentMessage"]] = cast(
-        Mapped[List["AgentMessage"]],
+    messages: Mapped[list[AgentMessage]] = cast(
+        Mapped[list["AgentMessage"]],
         db.relationship(
             "AgentMessage",
             back_populates="chat",
@@ -94,8 +94,8 @@ class AgentChat(Model):
             order_by="AgentMessage.id",
         ),
     )
-    cards: Mapped[List["AgentRecipeCard"]] = cast(
-        Mapped[List["AgentRecipeCard"]],
+    cards: Mapped[list[AgentRecipeCard]] = cast(
+        Mapped[list["AgentRecipeCard"]],
         db.relationship(
             "AgentRecipeCard",
             back_populates="chat",
@@ -227,6 +227,9 @@ class AgentMessage(Model):
     # OpenAI tool_call_id this message responds to, when role == TOOL.
     tool_call_id: Mapped[str | None] = db.Column(db.String(128))
     tool_name: Mapped[str | None] = db.Column(db.String(128))
+    requires_confirmation: Mapped[bool] = db.Column(
+        db.Boolean(), nullable=False, default=False
+    )
     # Set when this assistant/tool turn produced a recipe so the UI can show
     # a "view recipe" affordance.
     created_recipe_id: Mapped[int | None] = db.Column(
@@ -249,11 +252,11 @@ class AgentMessage(Model):
     # surfaces them as "attached context" to the LLM.
     attachments_json: Mapped[str | None] = db.Column(db.Text())
 
-    chat: Mapped["AgentChat"] = cast(
+    chat: Mapped[AgentChat] = cast(
         Mapped["AgentChat"],
         db.relationship("AgentChat", back_populates="messages"),
     )
-    created_recipe: Mapped["Recipe | None"] = cast(
+    created_recipe: Mapped[Recipe | None] = cast(
         Mapped["Recipe | None"],
         db.relationship("Recipe", uselist=False),
     )

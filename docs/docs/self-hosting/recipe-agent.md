@@ -17,7 +17,7 @@ supports out of the box:
 |----------|----------|-------|
 | OpenAI | `https://api.openai.com/v1` | Default. Use models like `gpt-4o-mini`. |
 | Google Gemini | _(empty — uses the native `gemini/` route)_ | Pick `Gemini` as provider and a model name like `gemini-1.5-flash`. |
-| Ollama (self-hosted) | `http://localhost:11434/v1` | Pick `Custom`, set the URL, model = your pulled model (e.g. `llama3.1`). |
+| Ollama (self-hosted) | `http://localhost:11434/v1` | Pick `Custom`, set the URL, model = your pulled model (e.g. `llama3.1`), and explicitly allow `localhost` with `LLM_ALLOWED_HOSTS`. |
 | OpenRouter / vLLM / LM Studio | as documented by the service | Pick `Custom`. |
 
 ## Configuration
@@ -38,14 +38,21 @@ Use **Test connection** to verify the credentials before going live.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ENCRYPTION_KEY` | _(derived from `JWT_SECRET_KEY`)_ | Fernet key (url-safe base64, 32 bytes) used to encrypt stored API keys. **Set this explicitly in production**, otherwise rotating `JWT_SECRET_KEY` will make stored keys unreadable. |
-| `LLM_ALLOWED_HOSTS` | _(unset)_ | Optional comma-separated allowlist of hostnames the server may contact for LLM calls (e.g. `api.openai.com,generativelanguage.googleapis.com`). When unset, no allowlist is enforced. |
+| `LLM_ENCRYPTION_KEY` | _(required outside debug mode)_ | Current Fernet key (url-safe base64, 32 bytes) used for new and existing API keys. |
+| `LLM_ENCRYPTION_KEY_PREVIOUS` | _(unset)_ | Optional comma-separated previous Fernet keys. Keep the old key here during rotation so existing ciphertext remains readable. |
+| `LLM_ALLOWED_HOSTS` | _(unset)_ | Comma-separated allowlist for every custom endpoint hostname. Built-in OpenAI and Gemini hosts work without it. |
 
 Generate a Fernet key with:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+To rotate keys, move the old `LLM_ENCRYPTION_KEY` value to
+`LLM_ENCRYPTION_KEY_PREVIOUS` and install the new value as
+`LLM_ENCRYPTION_KEY`. New secrets use the current key while old secrets remain
+readable. Remove the previous key only after all stored credentials have been
+entered again under the current key.
 
 ## Security notes
 
@@ -56,5 +63,5 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - Each agent chat is private to the user that started it.
 - Every tool call runs as the calling user; it cannot reach data outside the
   household, because all KitchenOwl tools enforce household membership.
-- Set `LLM_ALLOWED_HOSTS` if you want to prevent the server from being used as
-  an outbound proxy to arbitrary HTTP endpoints.
+- Custom endpoints must use HTTP(S), cannot include URL credentials, and must
+  have their hostname explicitly listed in `LLM_ALLOWED_HOSTS`.

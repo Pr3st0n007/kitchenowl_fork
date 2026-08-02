@@ -1,9 +1,18 @@
-from marshmallow import EXCLUDE, Schema, fields, validate
+from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate
 
 from app.models.llm_config import LLMProviderType
-
+from app.service.llm.provider import LLMError, validate_endpoint_url
 
 PROVIDER_VALUES = [p.value for p in LLMProviderType]
+
+
+def _validate_base_url(value: str | None) -> None:
+    if value is None or not value.strip():
+        return
+    try:
+        validate_endpoint_url(value.strip())
+    except LLMError as exc:
+        raise ValidationError(str(exc)) from exc
 
 
 class UpdateLLMConfig(Schema):
@@ -11,7 +20,10 @@ class UpdateLLMConfig(Schema):
         unknown = EXCLUDE
 
     provider = fields.String(validate=validate.OneOf(PROVIDER_VALUES))
-    base_url = fields.String(allow_none=True, validate=validate.Length(max=512))
+    base_url = fields.String(
+        allow_none=True,
+        validate=[validate.Length(max=512), _validate_base_url],
+    )
     model = fields.String(allow_none=True, validate=validate.Length(max=128))
     # ``api_key`` is write-only. Pass an empty string to clear the stored key.
     api_key = fields.String(allow_none=True)

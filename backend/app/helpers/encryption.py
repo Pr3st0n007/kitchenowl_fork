@@ -15,13 +15,12 @@ import base64
 import hashlib
 import logging
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from app.config import get_secret
 
-
 _logger = logging.getLogger(__name__)
-_fernet: Fernet | None = None
+_fernet: Fernet | MultiFernet | None = None
 
 
 def _derive_key_from(secret: str) -> bytes:
@@ -30,29 +29,44 @@ def _derive_key_from(secret: str) -> bytes:
     return base64.urlsafe_b64encode(digest)
 
 
-def _get_fernet() -> Fernet:
+def _load_fernet(value: str, variable: str) -> Fernet:
+    try:
+        return Fernet(value.encode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(
+            f"{variable} is not a valid Fernet key (32 url-safe base64 bytes)."
+        ) from exc
+
+
+def _get_fernet() -> Fernet | MultiFernet:
     global _fernet
     if _fernet is not None:
         return _fernet
 
     explicit = get_secret("LLM_ENCRYPTION_KEY")
     if explicit:
-        try:
-            _fernet = Fernet(explicit.encode("utf-8") if isinstance(explicit, str) else explicit)
-            return _fernet
-        except Exception as exc:
-            raise RuntimeError(
-                "LLM_ENCRYPTION_KEY is not a valid Fernet key (32 url-safe base64 bytes)."
-            ) from exc
+        keys = [_load_fernet(explicit, "LLM_ENCRYPTION_KEY")]
+        previous = get_secret("LLM_ENCRYPTION_KEY_PREVIOUS")
+        if previous:
+            keys.extend(
+                _load_fernet(value.strip(), "LLM_ENCRYPTION_KEY_PREVIOUS")
+                for value in previous.split(",")
+                if value.strip()
+            )
+        _fernet = MultiFernet(keys) if len(keys) > 1 else keys[0]
+        return _fernet
+
+    allow_derived = (
+        get_secret("DEBUG", "False").lower() == "true"
+        or get_secret("ALLOW_INSECURE_SECRETS", "False").lower() == "true"
+    )
+    if not allow_derived:
+        raise RuntimeError("LLM_ENCRYPTION_KEY must be set outside development mode")
 
     jwt_secret = get_secret("JWT_SECRET_KEY", "super-secret") or "super-secret"
-    if jwt_secret == "super-secret":
-        _logger.warning(
-            "LLM_ENCRYPTION_KEY is not set and JWT_SECRET_KEY uses the default "
-            "'super-secret'. LLM API keys will be encrypted with a derived key, "
-            "but you should set LLM_ENCRYPTION_KEY (or a strong JWT_SECRET_KEY) "
-            "for production use."
-        )
+    _logger.warning(
+        "LLM_ENCRYPTION_KEY is not set; deriving it from JWT_SECRET_KEY for development"
+    )
     _fernet = Fernet(_derive_key_from(jwt_secret))
     return _fernet
 
@@ -82,7 +96,7 @@ def reset_for_tests() -> None:
 
 # Re-export for callers that prefer importing through this module
 __all__ = [
-    "encrypt_secret",
     "decrypt_secret",
+    "encrypt_secret",
     "reset_for_tests",
 ]
