@@ -1,3 +1,4 @@
+import importlib
 import os
 import tempfile
 
@@ -8,4 +9,4 @@ os.environ["JWT_SECRET_KEY"] = "kitchenowl-test-secret-at-least-32-bytes"
 os.environ["LLM_ENCRYPTION_KEY"] = "kVkJTed7cYlTUoQaVHi65tRIViE88hhM1PliNE5-BdM="
 os.environ["KITCHENOWL_MCP_ENABLED"] = "true"
 
-import app
+app = importlib.import_module("app")

@@ -1,7 +1,6 @@
-import os
-import pytest
-from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app import app, db
 
@@ -100,7 +99,7 @@ def onboarded_client(client, admin_username, admin_name, admin_password):
         "name": admin_name,
         "password": admin_password,
     }
-    response = client.post("/api/onboarding", json=onboard_data)
+    client.post("/api/onboarding", json=onboard_data)
     return client
 
 
