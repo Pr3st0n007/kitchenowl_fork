@@ -43,8 +43,7 @@ class AgentChatListPage extends StatelessWidget {
   }
 
   List<_ChatGroup> _groupChatsByDay(List<AgentChat> chats, DateTime now) {
-    final sorted = [...chats]
-      ..sort((a, b) {
+    final sorted = [...chats]..sort((a, b) {
         final ad = a.displayTimestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
         final bd = b.displayTimestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
         return bd.compareTo(ad);
@@ -52,8 +51,7 @@ class AgentChatListPage extends StatelessWidget {
 
     final buckets = <_ChatBucket, List<AgentChat>>{
       _ChatBucket.today: [],
-      _ChatBucket.yesterday: [],
-      _ChatBucket.twoDaysAgo: [],
+      _ChatBucket.thisWeek: [],
       _ChatBucket.older: [],
     };
 
@@ -78,8 +76,7 @@ class AgentChatListPage extends StatelessWidget {
     final diffDays = today.difference(chatDay).inDays;
 
     if (diffDays <= 0) return _ChatBucket.today;
-    if (diffDays == 1) return _ChatBucket.yesterday;
-    if (diffDays == 2) return _ChatBucket.twoDaysAgo;
+    if (diffDays <= 6) return _ChatBucket.thisWeek;
     return _ChatBucket.older;
   }
 
@@ -88,11 +85,8 @@ class AgentChatListPage extends StatelessWidget {
     switch (bucket) {
       case _ChatBucket.today:
         return loc.agentBucketToday;
-      case _ChatBucket.yesterday:
-        return loc.agentBucketYesterday;
-      case _ChatBucket.twoDaysAgo:
-        final code = Localizations.localeOf(context).languageCode;
-        return code == 'de' ? 'Vor 2 Tagen' : '2 days ago';
+      case _ChatBucket.thisWeek:
+        return loc.agentBucketThisWeek;
       case _ChatBucket.older:
         return loc.agentBucketOlder;
     }
@@ -121,10 +115,8 @@ class AgentChatListPage extends StatelessWidget {
     return BlocBuilder<AgentChatListCubit, AgentChatListState>(
       builder: (context, state) {
         final cubit = context.read<AgentChatListCubit>();
-        final household =
-            context.read<HouseholdCubit>().state.household;
-        final isOffline =
-            context.watch<AuthCubit>().state.isOffline;
+        final household = context.read<HouseholdCubit>().state.household;
+        final isOffline = context.watch<AuthCubit>().state.isOffline;
         final showFab = state.agentReady && !isOffline;
 
         return Scaffold(
@@ -180,241 +172,225 @@ class AgentChatListPage extends StatelessWidget {
         state.filterPersonaId != null || state.search.trim().isNotEmpty;
 
     return SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Compact menu: search bar + persona filter + settings in one row
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Compact menu: search bar + settings.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: loc.agentSearchChats,
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    onChanged: cubit.setSearch,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: loc.agentSettings,
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: () => _openSettings(context, household),
+                ),
+              ],
+            ),
+          ),
+          if (state.personas.isNotEmpty)
+            SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: kMinInteractiveDimension,
+                ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: loc.agentSearchChats,
-                          prefixIcon: const Icon(Icons.search),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                        ),
-                        onChanged: cubit.setSearch,
-                      ),
+                    ChoiceChip(
+                      label: Text(loc.agentFilterAll),
+                      selected: state.filterPersonaId == null,
+                      onSelected: (_) => cubit.setFilterPersona(null),
                     ),
-                    if (state.personas.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    for (final p in state.personas) ...[
+                      ChoiceChip(
+                        avatar: Icon(personaIconFor(p), size: 16),
+                        label: Text(p.name),
+                        selected: state.filterPersonaId == p.id,
+                        onSelected: (_) => cubit.setFilterPersona(p.id),
+                      ),
                       const SizedBox(width: 8),
-                      // NOTE: PopupMenuButton treats a `null` selection value
-                      // as a "menu dismissed" event and never invokes
-                      // `onSelected`. We therefore use a non-null sentinel
-                      // (`_kFilterAllSentinel`) for the "All" entry so that
-                      // clearing the persona filter actually works.
-                      PopupMenuButton<int>(
-                        tooltip: 'Filter',
-                        icon: Icon(
-                          state.filterPersonaId != null
-                              ? Icons.filter_alt
-                              : Icons.filter_alt_outlined,
-                        ),
-                        onSelected: (value) => cubit.setFilterPersona(
-                          value == _kFilterAllSentinel ? null : value,
-                        ),
-                        itemBuilder: (ctx) => [
-                          PopupMenuItem<int>(
-                            value: _kFilterAllSentinel,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.clear, size: 18),
-                                const SizedBox(width: 8),
-                                Text(loc.agentFilterAll),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          for (final p in state.personas)
-                            PopupMenuItem<int>(
-                              value: p.id,
-                              child: Row(
-                                children: [
-                                  Icon(personaIconFor(p), size: 18),
-                                  const SizedBox(width: 8),
-                                  Text(p.name),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
                     ],
-                    const SizedBox(width: 4),
-                    IconButton(
-                      tooltip: loc.agentSettings,
-                      icon: const Icon(Icons.settings_outlined),
-                      onPressed: () => _openSettings(context, household),
-                    ),
                   ],
                 ),
               ),
-              Expanded(
-                child: chats.isEmpty
-                    ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Spacer(),
-                          Icon(
-                            Icons.forum_outlined,
-                            size: 64,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.5),
+            ),
+          Expanded(
+            child: chats.isEmpty
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Spacer(),
+                      Icon(
+                        Icons.forum_outlined,
+                        size: 64,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          hasFilter
+                              ? loc.agentNoChatsForFilter
+                              : loc.agentNoChats,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ),
+                      const Spacer(),
+                    ],
+                  )
+                : ListView(
+                    children: [
+                      for (final group in groupedChats) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                          child: Text(
+                            _bucketLabel(context, group.bucket),
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            child: Text(
-                              hasFilter
-                                  ? loc.agentNoChatsForFilter
-                                  : loc.agentNoChats,
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyLarge,
-                            ),
-                          ),
-                          const Spacer(),
-                        ],
-                      )
-                    : ListView(
-                        children: [
-                          for (final group in groupedChats) ...[
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                              child: Text(
-                                _bucketLabel(context, group.bucket),
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                            ),
-                            for (final chat in group.chats)
-                              Builder(
-                                builder: (ctx) {
-                                  final persona = state.personas
-                                      .cast<dynamic>()
-                                      .firstWhere(
+                        ),
+                        for (final chat in group.chats)
+                          Builder(
+                            builder: (ctx) {
+                              final persona =
+                                  state.personas.cast<dynamic>().firstWhere(
                                         (p) => p.id == chat.personaId,
                                         orElse: () => null,
                                       );
-                                  final timestampText = _formatLastUpdated(
-                                      context, chat.displayTimestamp);
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.fromLTRB(
-                                        16, 0, 4, 0),
-                                    leading: CircleAvatar(
-                                      child: Icon(personaIconFor(persona)),
+                              final timestampText = _formatLastUpdated(
+                                  context, chat.displayTimestamp);
+                              return ListTile(
+                                contentPadding:
+                                    const EdgeInsets.fromLTRB(16, 0, 4, 0),
+                                leading: CircleAvatar(
+                                  child: Icon(personaIconFor(persona)),
+                                ),
+                                title: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.baseline,
+                                  textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        chat.title?.isNotEmpty == true
+                                            ? chat.title!
+                                            : loc.agentChat,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                    title: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.baseline,
-                                      textBaseline: TextBaseline.alphabetic,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            chat.title?.isNotEmpty == true
-                                                ? chat.title!
-                                                : loc.agentChat,
+                                    if (timestampText.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        timestampText,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                subtitle:
+                                    chat.lastUserMessage?.isNotEmpty == true
+                                        ? Text(
+                                            chat.lastUserMessage!,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
+                                          )
+                                        : null,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    PopupMenuButton<_ChatAction>(
+                                      tooltip: loc.more,
+                                      icon: const Icon(Icons.more_vert),
+                                      onSelected: (value) async {
+                                        switch (value) {
+                                          case _ChatAction.rename:
+                                            await _renameChat(
+                                              context,
+                                              cubit,
+                                              chat,
+                                              loc,
+                                            );
+                                            break;
+                                          case _ChatAction.delete:
+                                            await _confirmDelete(
+                                              context,
+                                              cubit,
+                                              chat,
+                                              loc,
+                                            );
+                                            break;
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        PopupMenuItem<_ChatAction>(
+                                          value: _ChatAction.rename,
+                                          child: Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.edit_outlined,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(loc.agentRenameChat),
+                                            ],
                                           ),
                                         ),
-                                        if (timestampText.isNotEmpty) ...[
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            timestampText,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall,
+                                        PopupMenuItem<_ChatAction>(
+                                          value: _ChatAction.delete,
+                                          child: Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.delete_outline,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(loc.agentDeleteChat),
+                                            ],
                                           ),
-                                        ],
-                                      ],
-                                    ),
-                                    subtitle:
-                                        chat.lastUserMessage?.isNotEmpty == true
-                                            ? Text(
-                                                chat.lastUserMessage!,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              )
-                                            : null,
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        PopupMenuButton<_ChatAction>(
-                                          tooltip: loc.more,
-                                          icon: const Icon(Icons.more_vert),
-                                          onSelected: (value) async {
-                                            switch (value) {
-                                              case _ChatAction.rename:
-                                                await _renameChat(
-                                                  context,
-                                                  cubit,
-                                                  chat,
-                                                  loc,
-                                                );
-                                                break;
-                                              case _ChatAction.delete:
-                                                await _confirmDelete(
-                                                  context,
-                                                  cubit,
-                                                  chat,
-                                                  loc,
-                                                );
-                                                break;
-                                            }
-                                          },
-                                          itemBuilder: (ctx) => [
-                                            PopupMenuItem<_ChatAction>(
-                                              value: _ChatAction.rename,
-                                              child: Row(
-                                                children: [
-                                                  const Icon(
-                                                    Icons.edit_outlined,
-                                                    size: 18,
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Text(loc.agentRenameChat),
-                                                ],
-                                              ),
-                                            ),
-                                            PopupMenuItem<_ChatAction>(
-                                              value: _ChatAction.delete,
-                                              child: Row(
-                                                children: [
-                                                  const Icon(
-                                                    Icons.delete_outline,
-                                                    size: 18,
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Text(loc.agentDeleteChat),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
                                         ),
                                       ],
                                     ),
-                                    onTap: () => context.push(
-                                      '/household/${household.id}/agent/${chat.id}',
-                                      extra: household,
-                                    ),
-                                  );
-                                },
-                              ),
-                          ],
-                          const SizedBox(height: 12),
-                        ],
-                      ),
-              ),
-            ],
+                                  ],
+                                ),
+                                onTap: () => context.push(
+                                  '/household/${household.id}/agent/${chat.id}',
+                                  extra: household,
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                      const SizedBox(height: 12),
+                    ],
+                  ),
           ),
-        );
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmDelete(
@@ -483,15 +459,9 @@ class AgentChatListPage extends StatelessWidget {
   }
 }
 
-/// Sentinel used by the persona filter popup menu to represent the
-/// "All personas" choice. Cannot collide with a real persona id (those are
-/// non-negative auto-increment integers from the backend).
-const int _kFilterAllSentinel = -1;
-
 enum _ChatBucket {
   today,
-  yesterday,
-  twoDaysAgo,
+  thisWeek,
   older,
 }
 
