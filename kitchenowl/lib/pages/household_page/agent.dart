@@ -86,7 +86,7 @@ class AgentChatListPage extends StatelessWidget {
       case _ChatBucket.today:
         return loc.agentBucketToday;
       case _ChatBucket.thisWeek:
-        return loc.weekly;
+        return loc.agentBucketThisWeek;
       case _ChatBucket.older:
         return loc.agentBucketOlder;
     }
@@ -204,28 +204,32 @@ class AgentChatListPage extends StatelessWidget {
             ),
           ),
           if (state.personas.isNotEmpty)
-            SizedBox(
-              height: 44,
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                scrollDirection: Axis.horizontal,
-                children: [
-                  ChoiceChip(
-                    label: Text(loc.agentFilterAll),
-                    selected: state.filterPersonaId == null,
-                    onSelected: (_) => cubit.setFilterPersona(null),
-                  ),
-                  const SizedBox(width: 8),
-                  for (final p in state.personas) ...[
+            SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: kMinInteractiveDimension,
+                ),
+                child: Row(
+                  children: [
                     ChoiceChip(
-                      avatar: Icon(personaIconFor(p), size: 16),
-                      label: Text(p.name),
-                      selected: state.filterPersonaId == p.id,
-                      onSelected: (_) => cubit.setFilterPersona(p.id),
+                      label: Text(loc.agentFilterAll),
+                      selected: state.filterPersonaId == null,
+                      onSelected: (_) => cubit.setFilterPersona(null),
                     ),
                     const SizedBox(width: 8),
+                    for (final p in state.personas) ...[
+                      ChoiceChip(
+                        avatar: Icon(personaIconFor(p), size: 16),
+                        label: Text(p.name),
+                        selected: state.filterPersonaId == p.id,
+                        onSelected: (_) => cubit.setFilterPersona(p.id),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           Expanded(
