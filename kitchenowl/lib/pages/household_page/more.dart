@@ -80,10 +80,12 @@ class MorePage extends StatelessWidget {
                     ?.equals(current.household.viewOrdering ?? const []) ??
                 true,
             builder: (context, state) {
+              const maxPrimaryDestinations = 5;
               List<ViewsEnum> pages =
                   (state.household.viewOrdering ?? ViewsEnum.values)
-                      .where((e) => e.isViewActive(state.household))
-                    .skip(6)
+                      .where((e) =>
+                          e != ViewsEnum.more && e.isViewActive(state.household))
+                      .skip(maxPrimaryDestinations)
                       .toList();
               if (pages.isEmpty) return const SizedBox();
               return Column(
@@ -96,7 +98,15 @@ class MorePage extends StatelessWidget {
                                 leading: e.toIconWidget(context) ??
                                     Icon(e.toIcon(context)),
                                 minLeadingWidth: 16,
-                                onTap: () => context.go("/household"),
+                                onTap: () {
+                                  final router = GoRouter.of(context);
+                                  final householdId =
+                                      householdCubit.state.household.id;
+                                  context.pop();
+                                  router.go(
+                                    "/household/$householdId/${e.toString()}",
+                                  );
+                                },
                               ),
                             ) as Widget)
                         .toList() +
