@@ -18,6 +18,7 @@ import 'package:kitchenowl/services/api/api_service.dart';
 import 'package:kitchenowl/widgets/agent_tool_call_card.dart';
 import 'package:kitchenowl/widgets/recipe_markdown_body.dart';
 import 'package:kitchenowl/widgets/typing_indicator.dart';
+import 'package:responsive_builder/responsive_builder.dart';
 import 'package:tuple/tuple.dart';
 
 part 'agent_chat_page/undo_dialog.dart';
@@ -49,8 +50,8 @@ class _AgentChatPageState extends State<AgentChatPage> {
   static const double _kWideLayoutMinWidth = 1000;
   static const double _kChatMinWidth = 460;
   static const double _kPanelMinWidth = 280;
-  static const double _kPanelMaxWidth = 640;
   static const double _kPanelDefaultWidth = 380;
+  static const double _kPanelDefaultFractionOnLarge = 0.4;
   double _panelWidth = _kPanelDefaultWidth;
 
   // Maximum PDF file size accepted by the backend (AGENT_MAX_FILE_SIZE default: 20 MB).
@@ -370,7 +371,17 @@ class _AgentChatPageState extends State<AgentChatPage> {
             ),
             body: SafeArea(
               child: LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth >= _kWideLayoutMinWidth;
+                final forceWideLayout = getValueForScreenType<bool>(
+                  context: context,
+                  mobile: false,
+                  tablet: false,
+                  desktop: true,
+                );
+                final hasSpaceForWideLayout =
+                    constraints.maxWidth >= (_kChatMinWidth + _kPanelMinWidth);
+                final wide = hasSpaceForWideLayout &&
+                    (forceWideLayout ||
+                        constraints.maxWidth >= _kWideLayoutMinWidth);
                 final chatColumn = Column(
                   children: [
                     if (state.canRetryLast || state.error != null)
@@ -555,10 +566,18 @@ class _AgentChatPageState extends State<AgentChatPage> {
                     ],
                   );
                 }
-                final maxPanelWidth = (constraints.maxWidth - _kChatMinWidth)
-                    .clamp(_kPanelMinWidth, _kPanelMaxWidth);
-                final clampedPanelWidth =
-                    _panelWidth.clamp(_kPanelMinWidth, maxPanelWidth);
+                final maxPanelWidth =
+                    (constraints.maxWidth - _kChatMinWidth).clamp(
+                  _kPanelMinWidth,
+                  constraints.maxWidth,
+                );
+                final defaultPanelWidth =
+                    (constraints.maxWidth * _kPanelDefaultFractionOnLarge)
+                        .clamp(_kPanelDefaultWidth, maxPanelWidth);
+                final clampedPanelWidth = (_panelWidth == _kPanelDefaultWidth
+                        ? defaultPanelWidth
+                        : _panelWidth)
+                    .clamp(_kPanelMinWidth, maxPanelWidth);
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
