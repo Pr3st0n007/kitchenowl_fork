@@ -218,13 +218,18 @@ class _HouseholdPageState extends State<HouseholdPage>
             desktop: false,
           );
 
-          Widget body = Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints.expand(width: 1600),
-              child: widget.child,
-            ),
-          );
+          final isAgentChatRoute =
+              GoRouterState.of(context).uri.path.contains('/agent/chat/');
+
+          Widget body = isAgentChatRoute
+              ? widget.child
+              : Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints.expand(width: 1600),
+                    child: widget.child,
+                  ),
+                );
 
           if (!useBottomNavigationBar) {
             final bool extendedRail = getValueForScreenType<bool>(
@@ -277,9 +282,8 @@ class _HouseholdPageState extends State<HouseholdPage>
                       List<ViewsEnum> navPages;
                       if (pages.length > maxPrimaryDestinations + 1) {
                         final selected = pages[_selectedIndex];
-                        final candidates = pages
-                            .where((e) => e != ViewsEnum.more)
-                            .toList();
+                        final candidates =
+                            pages.where((e) => e != ViewsEnum.more).toList();
                         var primary =
                             candidates.take(maxPrimaryDestinations).toList();
                         if (selected != ViewsEnum.more &&
@@ -299,8 +303,7 @@ class _HouseholdPageState extends State<HouseholdPage>
                         pages[_selectedIndex],
                       );
                       if (navSelectedIndex < 0) {
-                        navSelectedIndex =
-                            navPages.indexOf(ViewsEnum.more);
+                        navSelectedIndex = navPages.indexOf(ViewsEnum.more);
                       }
                       if (navSelectedIndex < 0) navSelectedIndex = 0;
                       return NavigationBar(
@@ -310,8 +313,7 @@ class _HouseholdPageState extends State<HouseholdPage>
                             .map((e) => NavigationDestination(
                                   icon: e.toIconWidget(context) ??
                                       Icon(e.toIcon(context)),
-                                  selectedIcon:
-                                      Icon(e.toSelectedIcon(context)),
+                                  selectedIcon: Icon(e.toSelectedIcon(context)),
                                   label: e.toLocalizedShortString(context),
                                   tooltip: e.toLocalizedString(context),
                                 ))
