@@ -108,6 +108,37 @@ class AgentChatListPage extends StatelessWidget {
     return '${MaterialLocalizations.of(context).formatShortDate(local)}, $time';
   }
 
+  Widget _personaFilterChip(
+    BuildContext context, {
+    required String label,
+    IconData? icon,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    final theme = Theme.of(context);
+    return ChoiceChip(
+      showCheckmark: false,
+      avatar: icon == null
+          ? null
+          : Icon(
+              icon,
+              size: 16,
+              color: selected
+                  ? theme.colorScheme.onPrimary
+                  : theme.iconTheme.color,
+            ),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: selected ? theme.colorScheme.onPrimary : null,
+        ),
+      ),
+      selected: selected,
+      selectedColor: theme.colorScheme.secondary,
+      onSelected: (_) => onSelected(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
@@ -213,18 +244,20 @@ class AgentChatListPage extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    ChoiceChip(
-                      label: Text(loc.agentFilterAll),
+                    _personaFilterChip(
+                      context,
+                      label: loc.agentFilterAll,
                       selected: state.filterPersonaId == null,
-                      onSelected: (_) => cubit.setFilterPersona(null),
+                      onSelected: () => cubit.setFilterPersona(null),
                     ),
                     const SizedBox(width: 8),
                     for (final p in state.personas) ...[
-                      ChoiceChip(
-                        avatar: Icon(personaIconFor(p), size: 16),
-                        label: Text(p.name),
+                      _personaFilterChip(
+                        context,
+                        label: p.name,
+                        icon: personaIconFor(p),
                         selected: state.filterPersonaId == p.id,
-                        onSelected: (_) => cubit.setFilterPersona(p.id),
+                        onSelected: () => cubit.setFilterPersona(p.id),
                       ),
                       const SizedBox(width: 8),
                     ],
