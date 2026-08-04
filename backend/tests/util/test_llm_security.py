@@ -111,7 +111,9 @@ def test_generate_image_ignores_api_base_for_native_gemini(monkeypatch):
         provider=LLMProviderType.GEMINI,
         icon_generation_model="imagen-3.0-fast-generate-001",
         get_api_key=lambda: "test-key",
-        effective_base_url=lambda: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        effective_base_url=lambda: (
+            "https://generativelanguage.googleapis.com/v1beta/openai/"
+        ),
     )
 
     assert provider.generate_image("draw an icon") == "https://example.test/icon.png"
