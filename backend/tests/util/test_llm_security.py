@@ -13,6 +13,10 @@ from app.service.llm.provider import (
 )
 
 
+class _FakeRateLimitError(Exception):
+    pass
+
+
 def test_production_jwt_secret_must_be_strong():
     with pytest.raises(RuntimeError, match="at least 32 bytes"):
         _validate_jwt_secret("PLEASE_CHANGE_ME", allow_insecure=False)
@@ -119,3 +123,36 @@ def test_generate_image_ignores_api_base_for_native_gemini(monkeypatch):
     assert provider.generate_image("draw an icon") == "https://example.test/icon.png"
     assert captured["model"] == "gemini/imagen-3.0-fast-generate-001"
     assert "api_base" not in captured
+
+
+def test_generate_image_rate_limit_error_is_user_friendly(monkeypatch):
+    def fake_image_generation(**kwargs):
+        raise _FakeRateLimitError(
+            """{
+  \"error\": {
+    \"code\": 429,
+    \"message\": \"Quota exceeded. Please retry in 54.096s.\",
+    \"status\": \"RESOURCE_EXHAUSTED\"
+  }
+}"""
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = SimpleNamespace(
+        provider=LLMProviderType.GEMINI,
+        icon_generation_model="gemini-2.5-flash-image",
+        get_api_key=lambda: "test-key",
+        effective_base_url=lambda: None,
+    )
+
+    with pytest.raises(LLMError) as exc_info:
+        provider.generate_image("draw an icon")
+
+    assert "rate limited" in str(exc_info.value).lower()
+    assert "retry after about 54.096s" in str(exc_info.value).lower()

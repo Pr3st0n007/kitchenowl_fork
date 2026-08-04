@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
+import re
 import socket
 from dataclasses import dataclass, field
 from typing import Any
@@ -228,7 +229,37 @@ class OpenAICompatibleProvider(LLMProvider):
             return response.data[0].url
         except Exception as exc:
             _logger.warning("LLM image generation failed: %s", exc, exc_info=True)
-            raise LLMError(str(exc)) from exc
+            raise LLMError(_friendly_image_error_message(exc)) from exc
+
+
+def _friendly_image_error_message(exc: Exception) -> str:
+    detail = str(exc)
+    lower = detail.lower()
+    is_rate_limited = (
+        "ratelimiterror" in lower
+        or "resource_exhausted" in lower
+        or "quota exceeded" in lower
+        or "429" in lower
+    )
+    if not is_rate_limited:
+        return detail
+
+    retry_hint = None
+    retry_in_match = re.search(r"please retry in\s+([0-9.]+)s", detail, re.IGNORECASE)
+    if retry_in_match:
+        retry_hint = retry_in_match.group(1)
+    else:
+        retry_delay_match = re.search(
+            r'"retryDelay"\s*:\s*"([^"]+)"', detail, re.IGNORECASE
+        )
+        if retry_delay_match:
+            retry_hint = retry_delay_match.group(1)
+
+    message = "Image generation is rate limited by the provider quota."
+    if retry_hint:
+        message += f" Retry after about {retry_hint}s."
+    message += " Check Gemini API quota and billing settings."
+    return message
 
 
 def _normalize_response(response: Any) -> LLMResponse:
