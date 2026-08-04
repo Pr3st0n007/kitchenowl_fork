@@ -25,6 +25,8 @@ class LLMConfig extends Model {
   final String? model;
   final String? systemPrompt;
   final String? initialGreeting;
+  final String? iconGenerationPrompt;
+  final String? iconGenerationModel;
   final bool enabled;
   final bool apiKeySet;
   final bool braveSearchApiKeySet;
@@ -41,6 +43,8 @@ class LLMConfig extends Model {
     this.model,
     this.systemPrompt,
     this.initialGreeting,
+    this.iconGenerationPrompt,
+    this.iconGenerationModel,
     this.enabled = false,
     this.apiKeySet = false,
     this.braveSearchApiKeySet = false,
@@ -59,6 +63,8 @@ class LLMConfig extends Model {
       model: map['model'] as String?,
       systemPrompt: map['system_prompt'] as String?,
       initialGreeting: map['initial_greeting'] as String?,
+      iconGenerationPrompt: map['icon_generation_prompt'] as String?,
+      iconGenerationModel: map['icon_generation_model'] as String?,
       enabled: map['enabled'] as bool? ?? false,
       apiKeySet: map['api_key_set'] as bool? ?? false,
       braveSearchApiKeySet: map['brave_search_api_key_set'] as bool? ?? false,
@@ -78,6 +84,8 @@ class LLMConfig extends Model {
     String? model,
     String? systemPrompt,
     String? initialGreeting,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
     bool? enabled,
     bool? apiKeySet,
     bool? braveSearchApiKeySet,
@@ -92,6 +100,8 @@ class LLMConfig extends Model {
         model: model ?? this.model,
         systemPrompt: systemPrompt ?? this.systemPrompt,
         initialGreeting: initialGreeting ?? this.initialGreeting,
+        iconGenerationPrompt: iconGenerationPrompt ?? this.iconGenerationPrompt,
+        iconGenerationModel: iconGenerationModel ?? this.iconGenerationModel,
         enabled: enabled ?? this.enabled,
         apiKeySet: apiKeySet ?? this.apiKeySet,
         braveSearchApiKeySet: braveSearchApiKeySet ?? this.braveSearchApiKeySet,
@@ -108,6 +118,8 @@ class LLMConfig extends Model {
         "model": model,
         "system_prompt": systemPrompt,
         "initial_greeting": initialGreeting,
+        "icon_generation_prompt": iconGenerationPrompt,
+        "icon_generation_model": iconGenerationModel,
         "enabled": enabled,
         "max_tokens": maxTokens,
         "temperature": temperature,
@@ -122,6 +134,8 @@ class LLMConfig extends Model {
         model,
         systemPrompt,
         initialGreeting,
+        iconGenerationPrompt,
+        iconGenerationModel,
         enabled,
         apiKeySet,
         braveSearchApiKeySet,

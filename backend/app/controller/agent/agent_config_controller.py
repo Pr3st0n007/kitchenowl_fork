@@ -86,6 +86,10 @@ def update_config(args, household_id):
     if "initial_greeting" in args:
         raw = args["initial_greeting"]
         cfg.initial_greeting = (raw or "").strip() or None
+    if "icon_generation_prompt" in args:
+        cfg.icon_generation_prompt = args["icon_generation_prompt"]
+    if "icon_generation_model" in args:
+        cfg.icon_generation_model = (args["icon_generation_model"] or "").strip() or None
     if "enabled" in args:
         cfg.enabled = bool(args["enabled"])
     if "max_tokens" in args:
@@ -96,6 +100,60 @@ def update_config(args, household_id):
     cfg.save()
     return jsonify(cfg.obj_to_dict())
 
+
+import os
+import uuid
+import blurhash
+from PIL import Image
+from flask import request
+import requests
+from werkzeug.utils import secure_filename
+from app.config import UPLOAD_FOLDER
+from app.models.file import File
+
+@agentConfigHousehold.route("/config/generate-icon", methods=["POST"])
+@jwt_required()
+@authorize_household()
+def generate_icon(household_id):
+    cfg = LLMConfig.find_by_household(household_id)
+    if not cfg or not cfg.has_api_key():
+        raise InvalidUsage("LLM Provider is not configured")
+
+    req = request.json or {}
+    item_name = req.get("name", "Unknown item")
+
+    provider = get_provider(cfg)
+    prompt = cfg.icon_generation_prompt or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
+    prompt = prompt.replace("{name}", item_name)
+
+    try:
+        image_url = provider.generate_image(prompt)
+    except LLMError as exc:
+        raise InvalidUsage(str(exc))
+
+    try:
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
+    except Exception as exc:
+        raise InvalidUsage(f"Failed to download generated image: {exc}")
+
+    filename = secure_filename(str(uuid.uuid4()) + ".png")
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    with open(filepath, "wb") as f:
+        f.write(response.content)
+
+    blur = None
+    try:
+        with Image.open(filepath) as image:
+            image.thumbnail((100, 100))
+            blur = blurhash.encode(image, x_components=4, y_components=3)
+    except Exception:
+        pass
+
+    f = File(filename=filename, blur_hash=blur, created_by=current_user.id).save()
+
+    return jsonify({"filename": filename})
 
 @agentConfigHousehold.route("/config/test", methods=["POST"])
 @jwt_required()

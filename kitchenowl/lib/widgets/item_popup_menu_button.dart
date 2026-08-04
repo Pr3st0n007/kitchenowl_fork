@@ -69,6 +69,7 @@ class ItemPopupMenuButton extends StatelessWidget {
           builder: (context) => IconSelectionPage(
             oldIcon: item.icon,
             name: item.name,
+            household: household,
           ),
         ));
         if (icon != null) setIcon(icon.value);

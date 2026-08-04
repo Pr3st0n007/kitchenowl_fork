@@ -71,6 +71,17 @@ extension AgentApi on ApiService {
 
   // -------------------------------------------------------------- config
 
+  Future<String?> generateIcon(Household household, String itemName) async {
+    final res = await post(
+      '${_agentBase(household)}/config/generate-icon',
+      jsonEncode({'name': itemName}),
+      timeout: const Duration(minutes: 2),
+    );
+    if (res.statusCode != 200) return null;
+    final body = jsonDecode(res.body);
+    return body['filename'] as String?;
+  }
+
   Future<LLMConfig?> getAgentConfig(Household household) async {
     final res = await get('${_agentBase(household)}/config');
     if (res.statusCode != 200) return null;
@@ -86,6 +97,8 @@ extension AgentApi on ApiService {
     String? braveSearchApiKey,
     String? systemPrompt,
     String? initialGreeting,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
     bool? enabled,
     int? maxTokens,
     double? temperature,
@@ -100,6 +113,12 @@ extension AgentApi on ApiService {
     }
     if (systemPrompt != null) body['system_prompt'] = systemPrompt;
     if (initialGreeting != null) body['initial_greeting'] = initialGreeting;
+    if (iconGenerationPrompt != null) {
+      body['icon_generation_prompt'] = iconGenerationPrompt;
+    }
+    if (iconGenerationModel != null) {
+      body['icon_generation_model'] = iconGenerationModel;
+    }
     if (enabled != null) body['enabled'] = enabled;
     if (maxTokens != null) body['max_tokens'] = maxTokens;
     if (temperature != null) body['temperature'] = temperature;

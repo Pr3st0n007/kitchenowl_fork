@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class SelectableButtonCard extends StatefulWidget {
   final String title;
   final IconData? icon;
+  final Widget? iconWidget;
   final String? description;
   final bool selected;
   final void Function()? onPressed;
@@ -12,6 +13,7 @@ class SelectableButtonCard extends StatefulWidget {
   const SelectableButtonCard({
     super.key,
     this.icon,
+    this.iconWidget,
     required this.title,
     this.description,
     this.onPressed,
@@ -73,7 +75,18 @@ class _SelectableButtonCardState extends State<SelectableButtonCard> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (widget.icon != null)
+                  if (widget.iconWidget != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+                      child: LayoutBuilder(
+                        builder: (context, constraint) => SizedBox(
+                          width: constraint.maxWidth / 2.4,
+                          height: constraint.maxWidth / 2.4,
+                          child: widget.iconWidget,
+                        ),
+                      ),
+                    )
+                  else if (widget.icon != null)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
                       child: LayoutBuilder(

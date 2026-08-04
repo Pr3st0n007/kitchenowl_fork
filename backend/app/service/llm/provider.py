@@ -83,6 +83,9 @@ class LLMProvider:
     ) -> LLMResponse:
         raise NotImplementedError
 
+    def generate_image(self, prompt: str) -> str:
+        raise NotImplementedError
+
 
 class OpenAICompatibleProvider(LLMProvider):
     """Provider that delegates to ``litellm.completion``.
@@ -197,6 +200,30 @@ class OpenAICompatibleProvider(LLMProvider):
 
         return _normalize_response(response)
 
+    def generate_image(self, prompt: str) -> str:
+        try:
+            from litellm import image_generation
+        except Exception as exc:
+            raise LLMError(f"litellm is not available: {exc}") from exc
+
+        model = self.config.icon_generation_model or "dall-e-3"
+        
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "api_key": self.config.get_api_key(),
+        }
+        
+        base_url = self.config.effective_base_url()
+        if base_url:
+            kwargs["api_base"] = base_url
+
+        try:
+            response = image_generation(**kwargs)
+            return response.data[0].url
+        except Exception as exc:
+            _logger.warning("LLM image generation failed: %s", exc, exc_info=True)
+            raise LLMError(str(exc)) from exc
 
 def _normalize_response(response: Any) -> LLMResponse:
     """Normalise a litellm ``ModelResponse`` into our :class:`LLMResponse`.

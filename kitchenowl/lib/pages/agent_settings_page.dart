@@ -24,6 +24,8 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
   final _braveApiKeyCtrl = TextEditingController();
   final _systemPromptCtrl = TextEditingController();
   final _initialGreetingCtrl = TextEditingController();
+  final _iconGenPromptCtrl = TextEditingController();
+  final _iconGenModelCtrl = TextEditingController();
   LLMProvider _provider = LLMProvider.openai;
   bool _initialized = false;
 
@@ -41,6 +43,8 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
     _braveApiKeyCtrl.dispose();
     _systemPromptCtrl.dispose();
     _initialGreetingCtrl.dispose();
+    _iconGenPromptCtrl.dispose();
+    _iconGenModelCtrl.dispose();
     _cubit.close();
     super.dispose();
   }
@@ -53,6 +57,8 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
     _modelCtrl.text = cfg.model ?? '';
     _systemPromptCtrl.text = cfg.systemPrompt ?? '';
     _initialGreetingCtrl.text = cfg.initialGreeting ?? '';
+    _iconGenPromptCtrl.text = cfg.iconGenerationPrompt ?? '';
+    _iconGenModelCtrl.text = cfg.iconGenerationModel ?? '';
   }
 
   Future<void> _save() async {
@@ -66,6 +72,8 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
           _braveApiKeyCtrl.text.isNotEmpty ? _braveApiKeyCtrl.text : null,
       systemPrompt: _systemPromptCtrl.text,
       initialGreeting: _initialGreetingCtrl.text,
+      iconGenerationPrompt: _iconGenPromptCtrl.text,
+      iconGenerationModel: _iconGenModelCtrl.text,
       enabled: true,
     );
     if (!mounted) return;
@@ -195,6 +203,24 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                       labelText: loc.agentPreferences,
                       helperText: loc.agentPreferencesHelp,
                       helperMaxLines: 3,
+                      alignLabelWithHint: true,
+                    ),
+                    minLines: 3,
+                    maxLines: 8,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _iconGenModelCtrl,
+                    decoration: InputDecoration(
+                      labelText: loc.agentIconGenerationModel,
+                      hintText: 'dall-e-3 / ...',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _iconGenPromptCtrl,
+                    decoration: InputDecoration(
+                      labelText: loc.agentIconGenerationPrompt,
                       alignLabelWithHint: true,
                     ),
                     minLines: 3,

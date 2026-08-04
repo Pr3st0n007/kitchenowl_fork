@@ -6,6 +6,17 @@ from flask_jwt_extended import jwt_required
 from app.models import Item, RecipeItems, Recipe, Category
 from .schemas import SearchByNameRequest, UpdateItem, AddItem
 
+import requests
+import uuid
+import os
+import blurhash
+from PIL import Image
+from werkzeug.utils import secure_filename
+from app.config import UPLOAD_FOLDER
+from app.models.file import File
+from app.models.llm_config import LLMConfig
+from app.service.llm.provider import get_provider, LLMError
+
 item = Blueprint("item", __name__)
 itemHousehold = Blueprint("item", __name__)
 
@@ -54,6 +65,56 @@ def deleteItemById(id):
     item.checkAuthorized()
     item.delete()
     return jsonify({"msg": "DONE"})
+
+
+@itemHousehold.route("/<int:id>/generate-icon", methods=["POST"])
+@jwt_required()
+@authorize_household()
+def generateItemIcon(household_id, id):
+    item = Item.find_by_id(id)
+    if not item or item.household_id != household_id:
+        raise NotFoundRequest()
+
+    cfg = LLMConfig.find_by_household(household_id)
+    if not cfg or not cfg.has_api_key():
+        raise InvalidUsage("LLM Provider is not configured")
+
+    provider = get_provider(cfg)
+    prompt = cfg.icon_generation_prompt or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
+    prompt = prompt.replace("{name}", item.name)
+
+    try:
+        image_url = provider.generate_image(prompt)
+    except LLMError as exc:
+        raise InvalidUsage(str(exc))
+
+    # Download the image
+    try:
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
+    except Exception as exc:
+        raise InvalidUsage(f"Failed to download generated image: {exc}")
+
+    filename = secure_filename(str(uuid.uuid4()) + ".png")
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    with open(filepath, "wb") as f:
+        f.write(response.content)
+
+    blur = None
+    try:
+        with Image.open(filepath) as image:
+            image.thumbnail((100, 100))
+            blur = blurhash.encode(image, x_components=4, y_components=3)
+    except Exception:
+        pass
+
+    from flask_jwt_extended import current_user
+    f = File(filename=filename, blur_hash=blur, created_by=current_user.id).save()
+
+    item.icon = filename
+    item.save()
+
+    return jsonify(item.obj_to_dict())
 
 
 @itemHousehold.route("/search", methods=["GET"])

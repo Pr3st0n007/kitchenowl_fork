@@ -81,6 +81,8 @@ class LLMConfig(Model):
     brave_search_api_key_encrypted: Mapped[str | None] = db.Column(db.String())
     system_prompt: Mapped[str | None] = db.Column(db.Text())
     initial_greeting: Mapped[str | None] = db.Column(db.Text())
+    icon_generation_model: Mapped[str | None] = db.Column(db.String(128))
+    icon_generation_prompt: Mapped[str | None] = db.Column(db.Text())
     # Legacy column kept so existing rows still load; the suggestion
     # guideline feature was removed in favour of per-chat recipe cards and
     # is no longer surfaced via the API or used at runtime.
