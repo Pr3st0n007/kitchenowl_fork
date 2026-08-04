@@ -248,7 +248,17 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                         child: OutlinedButton.icon(
                           onPressed: state.testing
                               ? null
-                              : () => _cubit.testConnection(),
+                            : () => _cubit.testConnection(
+                              provider: _provider,
+                              baseUrl: _baseUrlCtrl.text.trim(),
+                              model: _modelCtrl.text.trim(),
+                              apiKey: _apiKeyCtrl.text.isNotEmpty
+                                ? _apiKeyCtrl.text
+                                : null,
+                              iconGenerationPrompt: _iconGenPromptCtrl.text,
+                              iconGenerationModel:
+                                _iconGenModelCtrl.text.trim(),
+                              ),
                           icon: state.testing
                               ? const SizedBox(
                                   width: 16,

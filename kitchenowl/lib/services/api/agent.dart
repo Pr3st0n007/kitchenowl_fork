@@ -167,16 +167,38 @@ extension AgentApi on ApiService {
     return LLMConfig.fromJson(jsonDecode(res.body));
   }
 
-  Future<AgentTestResult> testAgentConfig(Household household) async {
-    final res = await post('${_agentBase(household)}/config/test', '');
+  Future<AgentTestResult> testAgentConfig(
+    Household household, {
+    LLMProvider? provider,
+    String? baseUrl,
+    String? model,
+    String? apiKey,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
+  }) async {
+    final requestBody = <String, dynamic>{};
+    if (provider != null) requestBody['provider'] = provider.value;
+    if (baseUrl != null) requestBody['base_url'] = baseUrl;
+    if (model != null) requestBody['model'] = model;
+    if (apiKey != null) requestBody['api_key'] = apiKey;
+    if (iconGenerationPrompt != null) {
+      requestBody['icon_generation_prompt'] = iconGenerationPrompt;
+    }
+    if (iconGenerationModel != null) {
+      requestBody['icon_generation_model'] = iconGenerationModel;
+    }
+    final res = await post(
+      '${_agentBase(household)}/config/test',
+      jsonEncode(requestBody),
+    );
     if (res.statusCode != 200) {
       return AgentTestResult(ok: false, error: 'HTTP ${res.statusCode}');
     }
-    final body = Map<String, dynamic>.from(jsonDecode(res.body));
+    final responseBody = Map<String, dynamic>.from(jsonDecode(res.body));
     return AgentTestResult(
-      ok: body['ok'] == true,
-      reply: body['reply'] as String?,
-      error: body['error'] as String?,
+      ok: responseBody['ok'] == true,
+      reply: responseBody['reply'] as String?,
+      error: responseBody['error'] as String?,
     );
   }
 

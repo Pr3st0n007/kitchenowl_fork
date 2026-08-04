@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import uuid
+from types import SimpleNamespace
 
 import blurhash
 import requests
@@ -61,6 +62,81 @@ def _derive_icon_name(subject: str) -> str:
     if not cleaned:
         return "generated"
     return cleaned.split()[0]
+
+
+def _parse_json_object_request() -> dict:
+    req = request.get_json(silent=True)
+    if req is None:
+        raw_body = request.get_data(cache=False, as_text=True).strip()
+        if raw_body:
+            try:
+                req = json.loads(raw_body)
+            except ValueError:
+                req = {}
+        else:
+            req = {}
+    if not isinstance(req, dict):
+        return {}
+    return req
+
+
+def _normalize_nullable_str(value: object | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _build_test_config(cfg: LLMConfig, overrides: dict) -> SimpleNamespace:
+    provider = cfg.provider
+    if "provider" in overrides:
+        raw_provider = _normalize_nullable_str(overrides.get("provider"))
+        if raw_provider is None:
+            raise InvalidUsage("Provider is required to run a test")
+        try:
+            provider = LLMProviderType(raw_provider)
+        except ValueError as exc:
+            raise InvalidUsage("Invalid provider") from exc
+
+    model = cfg.model
+    if "model" in overrides:
+        model = _normalize_nullable_str(overrides.get("model"))
+    if provider == LLMProviderType.GEMINI and not model:
+        model = _DEFAULT_GEMINI_MODEL
+
+    base_url = cfg.base_url
+    if "base_url" in overrides:
+        base_url = _normalize_nullable_str(overrides.get("base_url"))
+
+    icon_generation_prompt = cfg.icon_generation_prompt
+    if "icon_generation_prompt" in overrides:
+        icon_generation_prompt = _normalize_nullable_str(
+            overrides.get("icon_generation_prompt")
+        )
+
+    icon_generation_model = cfg.icon_generation_model
+    if "icon_generation_model" in overrides:
+        icon_generation_model = _normalize_nullable_str(
+            overrides.get("icon_generation_model")
+        )
+
+    api_key = cfg.get_api_key()
+    if "api_key" in overrides:
+        api_key = _normalize_nullable_str(overrides.get("api_key"))
+
+    return SimpleNamespace(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        icon_generation_prompt=icon_generation_prompt,
+        icon_generation_model=icon_generation_model,
+        max_tokens=cfg.max_tokens,
+        temperature=cfg.temperature,
+        default_base_url=lambda: cfg.default_base_url(),
+        effective_base_url=lambda: base_url or cfg.default_base_url(),
+        get_api_key=lambda: api_key,
+        has_api_key=lambda: bool(api_key),
+    )
 
 
 @agentConfigHousehold.route("/config", methods=["GET"])
@@ -128,18 +204,7 @@ def generate_icon(household_id):
     if not cfg or not cfg.has_api_key():
         raise InvalidUsage("LLM Provider is not configured")
 
-    req = request.get_json(silent=True)
-    if req is None:
-        raw_body = request.get_data(cache=False, as_text=True).strip()
-        if raw_body:
-            try:
-                req = json.loads(raw_body)
-            except ValueError:
-                req = {}
-        else:
-            req = {}
-    if not isinstance(req, dict):
-        req = {}
+    req = _parse_json_object_request()
     item_name = str(req.get("name") or "Unknown item").strip() or "Unknown item"
 
     provider = get_provider(cfg)
@@ -190,12 +255,18 @@ def generate_icon(household_id):
 @authorize_household(required=RequiredRights.ADMIN)
 def test_config(household_id):
     cfg = LLMConfig.find_by_household(household_id)
-    if not cfg or not cfg.model or not cfg.has_api_key():
+    if not cfg:
         raise InvalidUsage("Provider, model and API key are required to run a test")
 
-    provider = get_provider(cfg)
+    req = _parse_json_object_request()
+    test_cfg = _build_test_config(cfg, req)
+
+    if not test_cfg.model or not test_cfg.has_api_key():
+        raise InvalidUsage("Provider, model and API key are required to run a test")
+
+    provider = get_provider(test_cfg)
     try:
-        response = provider.chat(
+        chat_response = provider.chat(
             messages=[
                 {
                     "role": "system",
@@ -211,9 +282,28 @@ def test_config(household_id):
             {"ok": False, "error": safe_error_message(exc, "LLM provider error")}
         ), 200
 
+    image_prompt = (
+        test_cfg.icon_generation_prompt
+        or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
+    )
+    image_prompt = image_prompt.replace("{name}", "test ingredient")
+    try:
+        provider.generate_image(image_prompt)
+    except LLMError as exc:
+        _logger.info("LLM image generation test failed: %s", exc)
+        return jsonify(
+            {
+                "ok": False,
+                "error": safe_error_message(
+                    exc,
+                    "Image generation check failed for the configured provider/model",
+                ),
+            }
+        ), 200
+
     return jsonify(
         {
             "ok": True,
-            "reply": (response.content or "").strip()[:200],
+            "reply": (chat_response.content or "").strip()[:200],
         }
     )
