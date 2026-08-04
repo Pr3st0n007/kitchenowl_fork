@@ -212,7 +212,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                   TextField(
                     controller: _iconGenModelCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Icon Generation Model',
+                      labelText: loc.agentIconGenerationModel,
                       hintText: 'dall-e-3 / ...',
                     ),
                   ),
@@ -220,7 +220,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
                   TextField(
                     controller: _iconGenPromptCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Icon Generation Prompt',
+                      labelText: loc.agentIconGenerationPrompt,
                       alignLabelWithHint: true,
                     ),
                     minLines: 3,
