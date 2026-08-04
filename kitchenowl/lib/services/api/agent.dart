@@ -15,6 +15,18 @@ class AgentTestResult {
   const AgentTestResult({required this.ok, this.reply, this.error});
 }
 
+class GeneratedIconResult {
+  final String filename;
+  final String subject;
+  final String iconName;
+
+  const GeneratedIconResult({
+    required this.filename,
+    required this.subject,
+    required this.iconName,
+  });
+}
+
 class AgentMessageResponse {
   final List<AgentMessage> messages;
   final AgentChat chat;
@@ -71,15 +83,42 @@ extension AgentApi on ApiService {
 
   // -------------------------------------------------------------- config
 
-  Future<String?> generateIcon(Household household, String itemName) async {
+  Future<GeneratedIconResult?> generateIcon(
+    Household household,
+    String itemName,
+  ) async {
     final res = await post(
       '${_agentBase(household)}/config/generate-icon',
       jsonEncode({'name': itemName}),
       timeout: const Duration(minutes: 2),
     );
     if (res.statusCode != 200) return null;
-    final body = jsonDecode(res.body);
-    return body['filename'] as String?;
+    final body = Map<String, dynamic>.from(jsonDecode(res.body));
+    final filename = body['filename'] as String?;
+    if (filename == null || filename.isEmpty) return null;
+
+    final subject = (body['subject'] as String?)?.trim();
+    final iconName = (body['icon_name'] as String?)?.trim();
+
+    return GeneratedIconResult(
+      filename: filename,
+      subject: (subject == null || subject.isEmpty) ? itemName : subject,
+      iconName: (iconName == null || iconName.isEmpty)
+          ? _defaultIconName(itemName)
+          : iconName,
+    );
+  }
+
+  String _defaultIconName(String itemName) {
+    final cleaned = itemName
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s_-]'), ' ')
+        .trim();
+    if (cleaned.isEmpty) return 'generated';
+    return cleaned.split(RegExp(r'[\s_-]+')).firstWhere(
+          (part) => part.isNotEmpty,
+          orElse: () => 'generated',
+        );
   }
 
   Future<LLMConfig?> getAgentConfig(Household household) async {

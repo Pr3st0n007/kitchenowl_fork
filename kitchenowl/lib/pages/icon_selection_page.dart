@@ -29,14 +29,16 @@ class _IconSelectionPageState extends State<IconSelectionPage> {
   Future<void> _generateIcon() async {
     if (widget.household == null) return;
     setState(() => _generating = true);
-    final filename = await ApiService.getInstance().generateIcon(
+    final generated = await ApiService.getInstance().generateIcon(
       widget.household!,
       widget.name,
     );
     if (!mounted) return;
     setState(() => _generating = false);
-    if (filename != null) {
-      Navigator.of(context).pop(Nullable(filename));
+    if (generated != null) {
+      final shouldUse = await _showGeneratedIconDialog(generated);
+      if (!mounted || shouldUse != true) return;
+      Navigator.of(context).pop(Nullable(generated.filename));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -50,6 +52,46 @@ class _IconSelectionPageState extends State<IconSelectionPage> {
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  Future<bool?> _showGeneratedIconDialog(GeneratedIconResult generated) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Generated Icon'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Subject: ${generated.subject}'),
+            const SizedBox(height: 12),
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image(
+                  image: getImageProvider(context, generated.filename),
+                  width: 96,
+                  height: 96,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('Icon name: ${generated.iconName}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Use icon'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

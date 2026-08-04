@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import uuid
 
 import blurhash
@@ -53,6 +54,13 @@ def _is_household_admin(household_id: int) -> bool:
 
 def _redact_config(full: dict) -> dict:
     return {k: full[k] for k in _MEMBER_VISIBLE_FIELDS if k in full}
+
+
+def _derive_icon_name(subject: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", " ", subject.lower()).strip()
+    if not cleaned:
+        return "generated"
+    return cleaned.split()[0]
 
 
 @agentConfigHousehold.route("/config", methods=["GET"])
@@ -132,7 +140,7 @@ def generate_icon(household_id):
             req = {}
     if not isinstance(req, dict):
         req = {}
-    item_name = req.get("name", "Unknown item")
+    item_name = str(req.get("name") or "Unknown item").strip() or "Unknown item"
 
     provider = get_provider(cfg)
     prompt = (
@@ -168,7 +176,13 @@ def generate_icon(household_id):
 
     f = File(filename=filename, blur_hash=blur, created_by=current_user.id).save()
 
-    return jsonify({"filename": filename})
+    return jsonify(
+        {
+            "filename": filename,
+            "subject": item_name,
+            "icon_name": _derive_icon_name(item_name),
+        }
+    )
 
 
 @agentConfigHousehold.route("/config/test", methods=["POST"])
