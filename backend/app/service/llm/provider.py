@@ -218,7 +218,9 @@ class OpenAICompatibleProvider(LLMProvider):
         }
 
         base_url = self.config.effective_base_url()
-        if base_url:
+        # Mirror chat behavior: native ``gemini/...`` image routes must not
+        # receive OpenAI-compatible ``api_base`` URLs (Google returns 404).
+        if base_url and not model.startswith("gemini/"):
             kwargs["api_base"] = base_url
 
         try:

@@ -89,3 +89,31 @@ def test_generate_image_prefixes_gemini_models(monkeypatch):
     assert provider.generate_image("draw an icon") == "https://example.test/icon.png"
     assert captured["model"] == "gemini/gemini-flash-latest"
     assert captured["prompt"] == "draw an icon"
+
+
+def test_generate_image_ignores_api_base_for_native_gemini(monkeypatch):
+    captured = {}
+
+    def fake_image_generation(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            data=[SimpleNamespace(url="https://example.test/icon.png")]
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = SimpleNamespace(
+        provider=LLMProviderType.GEMINI,
+        icon_generation_model="imagen-3.0-fast-generate-001",
+        get_api_key=lambda: "test-key",
+        effective_base_url=lambda: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+
+    assert provider.generate_image("draw an icon") == "https://example.test/icon.png"
+    assert captured["model"] == "gemini/imagen-3.0-fast-generate-001"
+    assert "api_base" not in captured
