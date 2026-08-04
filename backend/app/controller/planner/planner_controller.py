@@ -1,12 +1,14 @@
-from app.errors import NotFoundRequest
-from flask import jsonify, Blueprint
-from flask_jwt_extended import jwt_required
-from app import db
-from app.helpers import validate_args, authorize_household
-from app.models import Recipe, RecipeHistory, Planner
-from .schemas import AddPlannedRecipe, RemovePlannedRecipe
-from datetime import datetime, timedelta, timezone, date
+from datetime import UTC, date, datetime, timedelta
 
+from flask import Blueprint, jsonify
+from flask_jwt_extended import jwt_required
+
+from app import db
+from app.errors import NotFoundRequest
+from app.helpers import authorize_household, validate_args
+from app.models import Planner, Recipe, RecipeHistory
+
+from .schemas import AddPlannedRecipe, RemovePlannedRecipe
 
 plannerHousehold = Blueprint("planner", __name__)
 
@@ -79,7 +81,7 @@ def addPlannedRecipe(args, household_id):
         raise NotFoundRequest()
     recipe.checkAuthorized()
     cooking_date = (
-        datetime.fromtimestamp(args["cooking_date"] / 1000, timezone.utc).date()
+        datetime.fromtimestamp(args["cooking_date"] / 1000, UTC).date()
         if "cooking_date" in args
         else date.min
     )
@@ -121,7 +123,7 @@ def removePlannedRecipeById(args, household_id, id):
         raise NotFoundRequest()
 
     cooking_date = (
-        datetime.fromtimestamp(args["cooking_date"] / 1000, timezone.utc).date()
+        datetime.fromtimestamp(args["cooking_date"] / 1000, UTC).date()
         if "cooking_date" in args
         else date.min
     )

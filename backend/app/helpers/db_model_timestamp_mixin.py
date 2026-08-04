@@ -1,23 +1,24 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy import DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class DbModelTimestampMixin(object):
+class DbModelTimestampMixin:
     """
     Provides the :attr:`created_at` and :attr:`updated_at` audit timestamps
     """
 
     #: Timestamp for when this instance was created in UTC
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
 
     #: Timestamp for when this instance was last updated in UTC
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

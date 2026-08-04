@@ -1,8 +1,10 @@
+from functools import wraps
+
+from flask import request
 from marshmallow import Schema
 from marshmallow.exceptions import ValidationError
+
 from app.errors import InvalidUsage
-from flask import request
-from functools import wraps
 
 
 def validate_args(schema_cls: type[Schema]):
@@ -15,7 +17,7 @@ def validate_args(schema_cls: type[Schema]):
                 else:
                     arguments = schema_cls().loads(request.data.decode("utf-8"))
             except ValidationError as exc:
-                raise InvalidUsage("{}".format(exc))
+                raise InvalidUsage(f"{exc}")
 
             return func(arguments, *args, **kwargs)
 

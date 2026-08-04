@@ -1,22 +1,24 @@
-from typing import Any, Self, List, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers.db_list_type import DbListType
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
+    from app.helpers.db_model_base import DbModelBase
     from app.models import (
-        Item,
-        Shoppinglist,
         Category,
-        Recipe,
-        Tag,
         Expense,
         ExpenseCategory,
-        User,
         File,
+        Item,
+        Recipe,
+        Shoppinglist,
+        Tag,
+        User,
     )
-    from app.helpers.db_model_base import DbModelBase
 
     Model = DbModelBase
 
@@ -40,73 +42,73 @@ class Household(Model):
     # For households that have verified their authenticity
     verified: Mapped[bool | None] = db.Column(db.Boolean, default=False)
 
-    view_ordering: Mapped[List[str]] = db.Column(DbListType(), default=list())
+    view_ordering: Mapped[list[str]] = db.Column(DbListType(), default=list())
 
-    items: Mapped[List["Item"]] = cast(
-        Mapped[List["Item"]],
+    items: Mapped[list[Item]] = cast(
+        Mapped[list["Item"]],
         db.relationship(
             "Item",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    shoppinglists: Mapped[List["Shoppinglist"]] = cast(
-        Mapped[List["Shoppinglist"]],
+    shoppinglists: Mapped[list[Shoppinglist]] = cast(
+        Mapped[list["Shoppinglist"]],
         db.relationship(
             "Shoppinglist",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    categories: Mapped[List["Category"]] = cast(
-        Mapped[List["Category"]],
+    categories: Mapped[list[Category]] = cast(
+        Mapped[list["Category"]],
         db.relationship(
             "Category",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    recipes: Mapped[List["Recipe"]] = cast(
-        Mapped[List["Recipe"]],
+    recipes: Mapped[list[Recipe]] = cast(
+        Mapped[list["Recipe"]],
         db.relationship(
             "Recipe",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    tags: Mapped[List["Tag"]] = cast(
-        Mapped[List["Tag"]],
+    tags: Mapped[list[Tag]] = cast(
+        Mapped[list["Tag"]],
         db.relationship(
             "Tag",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    expenses: Mapped[List["Expense"]] = cast(
-        Mapped[List["Expense"]],
+    expenses: Mapped[list[Expense]] = cast(
+        Mapped[list["Expense"]],
         db.relationship(
             "Expense",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    expenseCategories: Mapped[List["ExpenseCategory"]] = cast(
-        Mapped[List["ExpenseCategory"]],
+    expenseCategories: Mapped[list[ExpenseCategory]] = cast(
+        Mapped[list["ExpenseCategory"]],
         db.relationship(
             "ExpenseCategory",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    member: Mapped[List["HouseholdMember"]] = cast(
-        Mapped[List["HouseholdMember"]],
+    member: Mapped[list["HouseholdMember"]] = cast(
+        Mapped[list["HouseholdMember"]],
         db.relationship(
             "HouseholdMember",
             back_populates="household",
             cascade="all, delete-orphan",
         ),
     )
-    photo_file: Mapped["File"] = cast(
+    photo_file: Mapped[File] = cast(
         Mapped["File"],
         db.relationship(
             "File",
@@ -121,7 +123,7 @@ class Household(Model):
         include_columns: list[str] | None = None,
     ) -> dict[str, Any]:
         res = super().obj_to_dict(skip_columns, include_columns)
-        res["member"] = [m.obj_to_user_dict() for m in getattr(self, "member")]
+        res["member"] = [m.obj_to_user_dict() for m in self.member]
         res["default_shopping_list"] = self.shoppinglists[0].obj_to_dict()
         if self.photo_file:
             res["photo_hash"] = self.photo_file.blur_hash
@@ -151,7 +153,7 @@ class Household(Model):
             "planner_feature": self.planner_feature,
             "expenses_feature": self.expenses_feature,
             "agent_feature": self.agent_feature,
-            "member": [m.user.username for m in getattr(self, "member")],
+            "member": [m.user.username for m in self.member],
             "shoppinglists": [s.name for s in self.shoppinglists],
             "recipes": [s.obj_to_export_dict() for s in self.recipes],
             "items": [s.obj_to_export_dict() for s in self.items],
@@ -183,14 +185,14 @@ class HouseholdMember(Model):
         nullable=True,
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             back_populates="member",
         ),
     )
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -200,9 +202,9 @@ class HouseholdMember(Model):
 
     def obj_to_user_dict(self) -> dict[str, Any]:
         res = self.user.obj_to_dict()
-        res["owner"] = getattr(self, "owner")
-        res["admin"] = getattr(self, "admin")
-        res["expense_balance"] = getattr(self, "expense_balance")
+        res["owner"] = self.owner
+        res["admin"] = self.admin
+        res["expense_balance"] = self.expense_balance
         return res
 
     def delete(self):

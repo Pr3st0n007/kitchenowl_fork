@@ -1,4 +1,4 @@
-from marshmallow import fields, Schema
+from marshmallow import Schema, fields
 
 from app.util import MultiDictList
 

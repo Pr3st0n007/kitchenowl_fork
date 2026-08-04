@@ -1,16 +1,17 @@
-from datetime import datetime, timezone, timedelta
 import os
-from app.helpers import server_admin_required
-from app.models import User, Token, Household, OIDCLink
-from app.config import (
-    JWT_REFRESH_TOKEN_EXPIRES,
-    JWT_ACCESS_TOKEN_EXPIRES,
-    UPLOAD_FOLDER,
-)
-from app import db
-from flask import jsonify, Blueprint
+from datetime import UTC, datetime, timedelta
+
+from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 
+from app import db
+from app.config import (
+    JWT_ACCESS_TOKEN_EXPIRES,
+    JWT_REFRESH_TOKEN_EXPIRES,
+    UPLOAD_FOLDER,
+)
+from app.helpers import server_admin_required
+from app.models import Household, OIDCLink, Token, User
 
 analytics = Blueprint("analytics", __name__)
 
@@ -24,7 +25,7 @@ def getBaseAnalytics():
         {
             "users": {
                 "total": User.count(),
-                "verified": User.query.filter(User.email_verified == True).count(),
+                "verified": User.query.filter(User.email_verified.is_(True)).count(),
                 "active": db.session.query(Token.user_id)
                 .filter(Token.type == "refresh")
                 .group_by(Token.user_id)
@@ -33,33 +34,30 @@ def getBaseAnalytics():
                 .filter(
                     Token.type == "refresh",
                     Token.created_at
-                    >= datetime.now(timezone.utc).date()
-                    - timedelta(days=datetime.now(timezone.utc).weekday()),
+                    >= datetime.now(UTC).date()
+                    - timedelta(days=datetime.now(UTC).weekday()),
                 )
                 .group_by(Token.user_id)
                 .count(),
                 "dau": db.session.query(Token.user_id)
                 .filter(
                     Token.type == "refresh",
-                    Token.created_at >= datetime.now(timezone.utc).date(),
+                    Token.created_at >= datetime.now(UTC).date(),
                 )
                 .group_by(Token.user_id)
                 .count(),
                 "online": db.session.query(Token.user_id)
                 .filter(
                     Token.type == "access",
-                    Token.created_at
-                    >= datetime.now(timezone.utc) - JWT_ACCESS_TOKEN_EXPIRES,
+                    Token.created_at >= datetime.now(UTC) - JWT_ACCESS_TOKEN_EXPIRES,
                 )
                 .group_by(Token.user_id)
                 .count(),
                 "old": User.query.filter(
-                    User.created_at
-                    <= datetime.now(timezone.utc) - JWT_REFRESH_TOKEN_EXPIRES
+                    User.created_at <= datetime.now(UTC) - JWT_REFRESH_TOKEN_EXPIRES
                 ).count(),
                 "old_active": User.query.filter(
-                    User.created_at
-                    <= datetime.now(timezone.utc) - JWT_REFRESH_TOKEN_EXPIRES
+                    User.created_at <= datetime.now(UTC) - JWT_REFRESH_TOKEN_EXPIRES
                 )
                 .filter(
                     User.id.in_(
@@ -80,10 +78,10 @@ def getBaseAnalytics():
             "households": {
                 "total": Household.count(),
                 "expense_feature": Household.query.filter(
-                    Household.expenses_feature == True
+                    Household.expenses_feature.is_(True)
                 ).count(),
                 "planner_feature": Household.query.filter(
-                    Household.planner_feature == True
+                    Household.planner_feature.is_(True)
                 ).count(),
             },
         }

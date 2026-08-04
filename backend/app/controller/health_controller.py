@@ -1,14 +1,16 @@
-from flask import jsonify, Blueprint
+from flask import Blueprint, jsonify
+
 from app.config import (
     BACKEND_VERSION,
-    MIN_FRONTEND_VERSION,
-    PRIVACY_POLICY_URL,
-    TERMS_URL,
-    OPEN_REGISTRATION,
-    EMAIL_MANDATORY,
     DISABLE_USERNAME_PASSWORD_LOGIN,
+    EMAIL_MANDATORY,
+    MIN_FRONTEND_VERSION,
+    OPEN_REGISTRATION,
+    PRIVACY_POLICY_URL,
+    SUPPORTED_LANGUAGES,
+    TERMS_URL,
+    oidc_clients,
 )
-from app.config import SUPPORTED_LANGUAGES, oidc_clients
 
 health = Blueprint("health", __name__)
 

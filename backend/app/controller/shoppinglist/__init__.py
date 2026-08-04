@@ -1,1 +1,4 @@
-from .shoppinglist_controller import shoppinglist, shoppinglistHousehold
+from .shoppinglist_controller import (
+    shoppinglist as shoppinglist,
+    shoppinglistHousehold as shoppinglistHousehold,
+)

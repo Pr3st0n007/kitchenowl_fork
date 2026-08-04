@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -80,7 +80,7 @@ def recipe_time():
 
 FIX_DATETIME = int(
     (
-        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         + timedelta(days=2)
     ).timestamp()
     * 1000

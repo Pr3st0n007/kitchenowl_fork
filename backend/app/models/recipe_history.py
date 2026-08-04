@@ -1,16 +1,18 @@
-from typing import Self, TYPE_CHECKING, cast
-from app import db
-from .recipe import Recipe
-from .planner import Planner
+import enum
+from typing import TYPE_CHECKING, Self, cast
+
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 
-import enum
+from app import db
+
+from .planner import Planner
+from .recipe import Recipe
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, Recipe
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Household, Recipe
 
     Model = DbModelBase
 
@@ -30,14 +32,14 @@ class RecipeHistory(Model):
         db.Integer, db.ForeignKey("household.id"), nullable=False
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    recipe: Mapped["Recipe"] = cast(
+    recipe: Mapped[Recipe] = cast(
         Mapped["Recipe"],
         db.relationship(
             "Recipe",

@@ -1,21 +1,24 @@
 from __future__ import annotations
+
 import enum
-from typing import Any, Self, List, TYPE_CHECKING, cast
+from datetime import datetime, timedelta
+from random import randint
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from sqlalchemy import func
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
+
 from .item import Item
-from .tag import Tag
 from .planner import Planner
-from random import randint
-from sqlalchemy.orm import Mapped
-from datetime import datetime, timedelta
+from .tag import Tag
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, RecipeHistory, File, Report
     from app.helpers.db_model_base import DbModelBase
+    from app.models import File, Household, RecipeHistory, Report
 
     Model = DbModelBase
 
@@ -70,23 +73,23 @@ class Recipe(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("household.id"), nullable=False, index=True
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    recipe_history: Mapped[List["RecipeHistory"]] = cast(
-        Mapped[List["RecipeHistory"]],
+    recipe_history: Mapped[list[RecipeHistory]] = cast(
+        Mapped[list["RecipeHistory"]],
         db.relationship(
             "RecipeHistory",
             back_populates="recipe",
             cascade="all, delete-orphan",
         ),
     )
-    items: Mapped[List["RecipeItems"]] = cast(
-        Mapped[List["RecipeItems"]],
+    items: Mapped[list[RecipeItems]] = cast(
+        Mapped[list["RecipeItems"]],
         db.relationship(
             "RecipeItems",
             back_populates="recipe",
@@ -95,8 +98,8 @@ class Recipe(Model, DbModelAuthorizeMixin):
             order_by="RecipeItems._name",
         ),
     )
-    tags: Mapped[List["RecipeTags"]] = cast(
-        Mapped[List["RecipeTags"]],
+    tags: Mapped[list[RecipeTags]] = cast(
+        Mapped[list["RecipeTags"]],
         db.relationship(
             "RecipeTags",
             back_populates="recipe",
@@ -105,8 +108,8 @@ class Recipe(Model, DbModelAuthorizeMixin):
             order_by="RecipeTags._name",
         ),
     )
-    plans: Mapped[List["Planner"]] = cast(
-        Mapped[List["Planner"]],
+    plans: Mapped[list[Planner]] = cast(
+        Mapped[list["Planner"]],
         db.relationship(
             "Planner",
             back_populates="recipe",
@@ -114,7 +117,7 @@ class Recipe(Model, DbModelAuthorizeMixin):
             lazy="selectin",
         ),
     )
-    photo_file: Mapped["File"] = cast(
+    photo_file: Mapped[File] = cast(
         Mapped["File"],
         db.relationship(
             "File",
@@ -124,8 +127,8 @@ class Recipe(Model, DbModelAuthorizeMixin):
         ),
     )
 
-    reports: Mapped[List["Report"]] = cast(
-        Mapped[List["Report"]],
+    reports: Mapped[list[Report]] = cast(
+        Mapped[list["Report"]],
         db.relationship(
             "Report",
             back_populates="recipe",
@@ -249,7 +252,7 @@ class Recipe(Model, DbModelAuthorizeMixin):
         )
         return (
             cls.query.filter(cls.household_id == household_id, cls.id.notin_(sq))
-            .filter(cls.suggestion_rank > 0)  # noqa
+            .filter(cls.suggestion_rank > 0)
             .order_by(cls.suggestion_rank)
             .offset(page * 10)
             .limit(10)
@@ -321,12 +324,12 @@ class Recipe(Model, DbModelAuthorizeMixin):
             return found
 
         # name is no regex
-        starts_with = "{0}%".format(name)
-        contains = "%{0}%".format(name)
-        one_error: List[str] = []
+        starts_with = f"{name}%"
+        contains = f"%{name}%"
+        one_error: list[str] = []
         for index in range(len(name)):
             name_one_error = name[:index] + "_" + name[index + 1 :]
-            one_error.append("%{0}%".format(name_one_error))
+            one_error.append(f"%{name_one_error}%")
 
         for looking_for in [starts_with, contains] + one_error:
             res = query.filter(cls.name.ilike(looking_for)).order_by(cls.name).all()
@@ -368,7 +371,7 @@ class RecipeItems(Model):
     description: Mapped[str] = db.Column("description", db.String())
     optional: Mapped[bool] = db.Column("optional", db.Boolean)
 
-    item: Mapped["Item"] = cast(
+    item: Mapped[Item] = cast(
         Mapped["Item"],
         db.relationship(
             "Item",
@@ -376,7 +379,7 @@ class RecipeItems(Model):
             lazy="joined",
         ),
     )
-    recipe: Mapped["Recipe"] = cast(
+    recipe: Mapped[Recipe] = cast(
         Mapped["Recipe"],
         db.relationship(
             "Recipe",
@@ -390,19 +393,19 @@ class RecipeItems(Model):
 
     def obj_to_item_dict(self) -> dict[str, Any]:
         res = self.item.obj_to_dict()
-        res["description"] = getattr(self, "description")
-        res["optional"] = getattr(self, "optional")
-        res["created_at"] = getattr(self, "created_at")
-        res["updated_at"] = getattr(self, "updated_at")
+        res["description"] = self.description
+        res["optional"] = self.optional
+        res["created_at"] = self.created_at
+        res["updated_at"] = self.updated_at
         return res
 
     def obj_to_recipe_dict(self) -> dict[str, Any]:
         res = self.recipe.obj_to_dict()
         res["items"] = [
             {
-                "id": getattr(self, "item_id"),
-                "description": getattr(self, "description"),
-                "optional": getattr(self, "optional"),
+                "id": self.item_id,
+                "description": self.description,
+                "optional": self.optional,
             }
         ]
         return res
@@ -424,14 +427,14 @@ class RecipeTags(Model):
         db.Integer, db.ForeignKey("tag.id"), primary_key=True
     )
 
-    tag: Mapped["Tag"] = cast(
+    tag: Mapped[Tag] = cast(
         Mapped["Tag"],
         db.relationship(
             "Tag",
             back_populates="recipes",
         ),
     )
-    recipe: Mapped["Recipe"] = cast(
+    recipe: Mapped[Recipe] = cast(
         Mapped["Recipe"],
         db.relationship(
             "Recipe",
@@ -446,8 +449,8 @@ class RecipeTags(Model):
 
     def obj_to_item_dict(self) -> dict[str, Any]:
         res = self.tag.obj_to_dict()
-        res["created_at"] = getattr(self, "created_at")
-        res["updated_at"] = getattr(self, "updated_at")
+        res["created_at"] = self.created_at
+        res["updated_at"] = self.updated_at
         return res
 
     @classmethod

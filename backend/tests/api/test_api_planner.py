@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import pytest
 
 
@@ -23,7 +24,7 @@ def test_meal_planning_cooking_date_field(
     assert response.status_code == 200
     planned_meals = response.get_json()
     actual = datetime.fromtimestamp(
-        planned_meals[0]["cooking_date"] / 1000, timezone.utc
+        planned_meals[0]["cooking_date"] / 1000, UTC
     ).replace(tzinfo=None)
     expected = datetime.fromtimestamp(pytest.FIX_DATETIME / 1000, None)
     assert actual == expected

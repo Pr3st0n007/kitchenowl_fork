@@ -13,13 +13,13 @@ Google Gemini (`gemini/...` model prefix or the OpenAI-compatibility
 endpoint) and any other OpenAI-compatible HTTP API for free.
 """
 
-from .provider import LLMProvider, OpenAICompatibleProvider, get_provider, LLMError
 from .agent import RecipeAgent
+from .provider import LLMError, LLMProvider, OpenAICompatibleProvider, get_provider
 
 __all__ = [
+    "LLMError",
     "LLMProvider",
     "OpenAICompatibleProvider",
-    "get_provider",
-    "LLMError",
     "RecipeAgent",
+    "get_provider",
 ]

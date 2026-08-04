@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import uuid
 
-from flask import Blueprint, jsonify
+import blurhash
+import requests
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import current_user, jwt_required
+from PIL import Image
+from werkzeug.utils import secure_filename
 
+from app.config import UPLOAD_FOLDER
 from app.errors import InvalidUsage
 from app.helpers import RequiredRights, authorize_household, validate_args
 from app.helpers.safe_error import safe_error_message
 from app.models import HouseholdMember, LLMConfig
+from app.models.file import File
 from app.models.llm_config import LLMProviderType
 from app.service.llm.provider import LLMError, get_provider
 
@@ -89,7 +98,9 @@ def update_config(args, household_id):
     if "icon_generation_prompt" in args:
         cfg.icon_generation_prompt = args["icon_generation_prompt"]
     if "icon_generation_model" in args:
-        cfg.icon_generation_model = (args["icon_generation_model"] or "").strip() or None
+        cfg.icon_generation_model = (
+            args["icon_generation_model"] or ""
+        ).strip() or None
     if "enabled" in args:
         cfg.enabled = bool(args["enabled"])
     if "max_tokens" in args:
@@ -101,16 +112,6 @@ def update_config(args, household_id):
     return jsonify(cfg.obj_to_dict())
 
 
-import os
-import uuid
-import blurhash
-from PIL import Image
-from flask import request
-import requests
-from werkzeug.utils import secure_filename
-from app.config import UPLOAD_FOLDER
-from app.models.file import File
-
 @agentConfigHousehold.route("/config/generate-icon", methods=["POST"])
 @jwt_required()
 @authorize_household()
@@ -119,11 +120,25 @@ def generate_icon(household_id):
     if not cfg or not cfg.has_api_key():
         raise InvalidUsage("LLM Provider is not configured")
 
-    req = request.json or {}
+    req = request.get_json(silent=True)
+    if req is None:
+        raw_body = request.get_data(cache=False, as_text=True).strip()
+        if raw_body:
+            try:
+                req = json.loads(raw_body)
+            except ValueError:
+                req = {}
+        else:
+            req = {}
+    if not isinstance(req, dict):
+        req = {}
     item_name = req.get("name", "Unknown item")
 
     provider = get_provider(cfg)
-    prompt = cfg.icon_generation_prompt or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
+    prompt = (
+        cfg.icon_generation_prompt
+        or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
+    )
     prompt = prompt.replace("{name}", item_name)
 
     try:
@@ -154,6 +169,7 @@ def generate_icon(household_id):
     f = File(filename=filename, blur_hash=blur, created_by=current_user.id).save()
 
     return jsonify({"filename": filename})
+
 
 @agentConfigHousehold.route("/config/test", methods=["POST"])
 @jwt_required()

@@ -1,4 +1,4 @@
-from marshmallow import fields, Schema, EXCLUDE
+from marshmallow import EXCLUDE, Schema, fields
 
 
 class SearchByNameRequest(Schema):

@@ -1,9 +1,10 @@
 import json
 
 from tqdm import tqdm
-from app.models import Household, File
-from app.models.agent_chat import AgentMessage
+
 from app import app
+from app.models import File, Household
+from app.models.agent_chat import AgentMessage
 
 
 def _agent_attached_filenames() -> set[str]:

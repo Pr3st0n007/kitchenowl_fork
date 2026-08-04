@@ -1,27 +1,29 @@
-from datetime import datetime, timezone
 import uuid
-import gevent
+from datetime import UTC, datetime
 
+import gevent
+from flask import Blueprint, jsonify
+from flask_jwt_extended import current_user, get_jwt, jwt_required
 from oic import rndstr
-from oic.oic.message import AuthorizationResponse
 from oic.oauth2.message import ErrorResponse
-from app.helpers import validate_args
-from flask import jsonify, Blueprint
-from flask_jwt_extended import current_user, jwt_required, get_jwt
-from app.models import User, Token, OIDCLink, OIDCRequest, ChallengeMailVerify
-from app.errors import NotFoundRequest, UnauthorizedRequest, getClientIp
-from app.service import mail
-from app.service.file_has_access_or_download import file_has_access_or_download
-from .schemas import Login, Signup, CreateLongLivedToken, GetOIDCLoginUrl, LoginOIDC
+from oic.oic.message import AuthorizationResponse
+
 from app.config import (
+    DISABLE_USERNAME_PASSWORD_LOGIN,
     EMAIL_MANDATORY,
     FRONT_URL,
-    jwt,
-    OPEN_REGISTRATION,
-    DISABLE_USERNAME_PASSWORD_LOGIN,
     OIDC_RFC_COMPLIANT_REDIRECT,
+    OPEN_REGISTRATION,
+    jwt,
     oidc_clients,
 )
+from app.errors import NotFoundRequest, UnauthorizedRequest, getClientIp
+from app.helpers import validate_args
+from app.models import ChallengeMailVerify, OIDCLink, OIDCRequest, Token, User
+from app.service import mail
+from app.service.file_has_access_or_download import file_has_access_or_download
+
+from .schemas import CreateLongLivedToken, GetOIDCLoginUrl, Login, LoginOIDC, Signup
 
 auth = Blueprint("auth", __name__)
 
@@ -32,7 +34,7 @@ def check_if_token_revoked(jwt_header, jwt_payload: dict) -> bool:
     jti = jwt_payload["jti"]
     token = Token.find_by_jti(jti)
     if token is not None:
-        token.last_used_at = datetime.now(timezone.utc)
+        token.last_used_at = datetime.now(UTC)
         token.user.last_seen = token.last_used_at
         token.save()
     return token is None
@@ -98,9 +100,7 @@ if not DISABLE_USERNAME_PASSWORD_LOGIN:
 
         if not user or not user.check_password(args["password"]):
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attempt with wrong username or password".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} login attempt with wrong username or password"
             )
         device = "Unkown"
         if "device" in args:
@@ -223,9 +223,7 @@ def refresh():
     user = current_user
     if not user:
         raise UnauthorizedRequest(
-            message="Unauthorized: IP {} refresh could not get current user".format(
-                getClientIp()
-            )
+            message=f"Unauthorized: IP {getClientIp()} refresh could not get current user"
         )
 
     refreshModel = Token.find_by_jti(get_jwt()["jti"])
@@ -282,7 +280,7 @@ def logout(id):
         jwt = get_jwt()
         token = Token.find_by_jti(jwt["jti"])
     if not token or token.user_id != current_user.id:
-        raise UnauthorizedRequest(message="Unauthorized: IP {}".format(getClientIp()))
+        raise UnauthorizedRequest(message=f"Unauthorized: IP {getClientIp()}")
 
     if token.type == "access":
         token.refresh_token.delete_token_familiy()
@@ -324,7 +322,7 @@ def createLongLivedToken(args):
     """
     user = current_user
     if not user:
-        raise UnauthorizedRequest(message="Unauthorized: IP {}".format(getClientIp()))
+        raise UnauthorizedRequest(message=f"Unauthorized: IP {getClientIp()}")
 
     llToken, _ = Token.create_longlived_token(user, args["device"])
 
@@ -362,11 +360,11 @@ def deleteLongLivedToken(id):
     """
     user = current_user
     if not user:
-        raise UnauthorizedRequest(message="Unauthorized: IP {}".format(getClientIp()))
+        raise UnauthorizedRequest(message=f"Unauthorized: IP {getClientIp()}")
 
     token = Token.find_by_id(id)
     if not token or token.user_id != user.id or token.type != "llt":
-        raise UnauthorizedRequest(message="Unauthorized: IP {}".format(getClientIp()))
+        raise UnauthorizedRequest(message=f"Unauthorized: IP {getClientIp()}")
 
     token.delete()
 
@@ -422,15 +420,13 @@ if FRONT_URL and len(oidc_clients) > 0:
         client = oidc_clients[provider]
         if not client:
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} get login url for unknown OIDC provider".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} get login url for unknown OIDC provider"
             )
         state = rndstr()
         nonce = rndstr()
         redirect_uri = (
             ("kitchenowl:" + ("" if OIDC_RFC_COMPLIANT_REDIRECT else "//"))
-            if "kitchenowl_scheme" in args and args["kitchenowl_scheme"]
+            if args.get("kitchenowl_scheme")
             else FRONT_URL
         ) + "/signin/redirect"
         args = {
@@ -495,18 +491,14 @@ if FRONT_URL and len(oidc_clients) > 0:
         oidc_request = OIDCRequest.find_by_state(args["state"])
         if not oidc_request:
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attempt with unknown OIDC state".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} login attempt with unknown OIDC state"
             )
         provider = oidc_request.provider
         client = oidc_clients[provider]
         if not client:
             oidc_request.delete()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attempt with unknown OIDC provider".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} login attempt with unknown OIDC provider"
             )
 
         if oidc_request.user != current_user:
@@ -514,9 +506,7 @@ if FRONT_URL and len(oidc_clients) > 0:
                 return "Request invalid: user not signed in for link request", 400
             oidc_request.delete()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attempt for a different account".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} login attempt for a different account"
             )
 
         client.parse_response(
@@ -537,16 +527,12 @@ if FRONT_URL and len(oidc_clients) > 0:
         if isinstance(tokenResponse, ErrorResponse):
             oidc_request.delete()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attempt for OIDC failed".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} login attempt for OIDC failed"
             )
         userinfo = tokenResponse["id_token"]
         if userinfo["nonce"] != oidc_request.nonce:
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attempt for OIDC failed: mismatched nonce".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} login attempt for OIDC failed: mismatched nonce"
             )
         oidc_request.delete()
 

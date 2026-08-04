@@ -92,7 +92,7 @@ class LLMConfig(Model):
     max_tokens: Mapped[int | None] = db.Column(db.Integer)
     temperature: Mapped[float | None] = db.Column(db.Float)
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship("Household", uselist=False),
     )
@@ -122,7 +122,7 @@ class LLMConfig(Model):
     def effective_base_url(self) -> str | None:
         return (self.base_url or "").strip() or self.default_base_url()
 
-    def effective_initial_greeting(self, persona: "AgentPersona | None" = None) -> str:
+    def effective_initial_greeting(self, persona: AgentPersona | None = None) -> str:
         """Return the configured greeting or the default.
 
         If ``persona`` is given and overrides the greeting, it wins over the

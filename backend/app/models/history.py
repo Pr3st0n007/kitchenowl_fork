@@ -1,15 +1,17 @@
-from typing import Any, Self, TYPE_CHECKING, cast
-from app import db
-from .shoppinglist import ShoppinglistItems
+import enum
+from typing import TYPE_CHECKING, Any, Self, cast
+
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 
-import enum
+from app import db
+
+from .shoppinglist import ShoppinglistItems
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Item, Shoppinglist
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Item, Shoppinglist
 
     Model = DbModelBase
 
@@ -29,7 +31,7 @@ class History(Model):
     )
     item_id: Mapped[int] = db.Column(db.Integer, db.ForeignKey("item.id"))
 
-    item: Mapped["Item"] = cast(
+    item: Mapped[Item] = cast(
         Mapped["Item"],
         db.relationship(
             "Item",
@@ -38,7 +40,7 @@ class History(Model):
             lazy="joined",
         ),
     )
-    shoppinglist: Mapped["Shoppinglist"] = cast(
+    shoppinglist: Mapped[Shoppinglist] = cast(
         Mapped["Shoppinglist"],
         db.relationship(
             "Shoppinglist",
@@ -79,7 +81,7 @@ class History(Model):
 
     def obj_to_item_dict(self) -> dict[str, Any]:
         res = self.item.obj_to_dict()
-        res["timestamp"] = getattr(self, "created_at")
+        res["timestamp"] = self.created_at
         return res
 
     @classmethod

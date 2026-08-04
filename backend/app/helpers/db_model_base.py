@@ -1,8 +1,8 @@
 from dataclasses import field
 from typing import TYPE_CHECKING, Any, Self
-from sqlalchemy.orm import DeclarativeBase
+
 from sqlalchemy import MetaData
-from sqlalchemy.orm import Query
+from sqlalchemy.orm import DeclarativeBase, Query
 
 from app.helpers.db_model_timestamp_mixin import DbModelTimestampMixin
 
@@ -55,8 +55,7 @@ class DbModelBase(DeclarativeBase, DbModelTimestampMixin):
             d[column.name] = getattr(self, column.name)
 
         for column_name in skip_columns or []:
-            if column_name in d:
-                del d[column_name]
+            d.pop(column_name, None)
 
         for column in self.__table__.columns:
             if not include_columns:

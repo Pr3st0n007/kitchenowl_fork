@@ -1,13 +1,14 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Self, TYPE_CHECKING, cast
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Optional, Self, cast
+
+from sqlalchemy.orm import Mapped
 
 from app import db
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import User
     from app.helpers.db_model_base import DbModelBase
+    from app.models import User
 
     Model = DbModelBase
 
@@ -21,7 +22,7 @@ class OIDCLink(Model):
         db.Integer, db.ForeignKey("user.id"), nullable=False, index=True
     )
 
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -45,7 +46,7 @@ class OIDCRequest(Model):
         db.Integer, db.ForeignKey("user.id"), nullable=True
     )
 
-    user: Mapped[Optional["User"]] = cast(
+    user: Mapped[User | None] = cast(
         Mapped[Optional["User"]],
         db.relationship(
             "User",
@@ -55,7 +56,7 @@ class OIDCRequest(Model):
 
     @classmethod
     def find_by_state(cls, state: str) -> Self | None:
-        filter_before = datetime.now(timezone.utc) - timedelta(minutes=7)
+        filter_before = datetime.now(UTC) - timedelta(minutes=7)
         return cls.query.filter(
             cls.state == state,
             cls.created_at >= filter_before,
@@ -63,6 +64,6 @@ class OIDCRequest(Model):
 
     @classmethod
     def delete_expired(cls):
-        filter_before = datetime.now(timezone.utc) - timedelta(minutes=7)
+        filter_before = datetime.now(UTC) - timedelta(minutes=7)
         db.session.query(cls).filter(cls.created_at <= filter_before).delete()
         db.session.commit()

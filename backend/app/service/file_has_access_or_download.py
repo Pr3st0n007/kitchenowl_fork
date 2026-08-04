@@ -1,16 +1,17 @@
 import os
 import shutil
 import uuid
-from requests_hardened import Config, Manager
+
 import blurhash
-from PIL import Image
-from app.errors import ForbiddenRequest
-from app.util.filename_validator import allowed_file
-from app.config import UPLOAD_FOLDER
-from app.models import File
 from flask_jwt_extended import current_user
+from PIL import Image
+from requests_hardened import Config, Manager
 from werkzeug.utils import secure_filename
 
+from app.config import UPLOAD_FOLDER
+from app.errors import ForbiddenRequest
+from app.models import File
+from app.util.filename_validator import allowed_file
 
 request_manager = Manager(
     Config(

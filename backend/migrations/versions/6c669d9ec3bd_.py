@@ -5,12 +5,14 @@ Revises: 4b4823a384e7
 Create Date: 2023-01-15 23:58:29.531456
 
 """
-from datetime import datetime, timezone
-from alembic import op
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import orm
-from app import db
+
 import app.helpers.db_set_type
+from app import db
 
 DeclarativeBase = orm.declarative_base()
 
@@ -198,14 +200,14 @@ def upgrade():
         household.planner_feature = settings.planner_feature
         household.expenses_feature = settings.expenses_feature
         household.view_ordering = settings.view_ordering
-        household.created_at = datetime.now(timezone.utc)
-        household.updated_at = datetime.now(timezone.utc)
+        household.created_at = datetime.now(UTC)
+        household.updated_at = datetime.now(UTC)
         
         users = session.query(User).all()
         for user in users:
             hm = HouseholdMember()
-            hm.created_at = datetime.now(timezone.utc)
-            hm.updated_at = datetime.now(timezone.utc)
+            hm.created_at = datetime.now(UTC)
+            hm.updated_at = datetime.now(UTC)
             hm.user_id = user.id
             hm.household_id = 1
             hm.admin = user.admin

@@ -1,3 +1,4 @@
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -60,3 +61,31 @@ def test_safe_error_message_is_single_line_and_capped():
     message = safe_error_message(ValueError("visible\n" + "secret" * 100))
     assert message == "visible"
     assert len(safe_error_message(ValueError("x" * 300))) == 200
+
+
+def test_generate_image_prefixes_gemini_models(monkeypatch):
+    captured = {}
+
+    def fake_image_generation(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            data=[SimpleNamespace(url="https://example.test/icon.png")]
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = SimpleNamespace(
+        provider=LLMProviderType.GEMINI,
+        icon_generation_model="gemini-flash-latest",
+        get_api_key=lambda: "test-key",
+        effective_base_url=lambda: None,
+    )
+
+    assert provider.generate_image("draw an icon") == "https://example.test/icon.png"
+    assert captured["model"] == "gemini/gemini-flash-latest"
+    assert captured["prompt"] == "draw an icon"

@@ -1,13 +1,16 @@
 from __future__ import annotations
-from typing import Any, Self, List, TYPE_CHECKING, cast
+
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, Item
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Household, Item
 
     Model = DbModelBase
 
@@ -24,15 +27,15 @@ class Category(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("household.id"), nullable=False, index=True
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    items: Mapped[List["Item"]] = cast(
-        Mapped[List["Item"]],
+    items: Mapped[list[Item]] = cast(
+        Mapped[list["Item"]],
         db.relationship(
             "Item",
             back_populates="category",
@@ -81,26 +84,26 @@ class Category(Model, DbModelAuthorizeMixin):
     def reorder(self, newIndex: int):
         cls = self.__class__
 
-        l: list[Self] = (
+        categories: list[Self] = (
             cls.query.filter(cls.household_id == self.household_id)
             .order_by(cls.ordering, cls.name)
             .all()
         )
 
-        self.ordering = min(newIndex, len(l) - 1)
+        self.ordering = min(newIndex, len(categories) - 1)
 
-        oldIndex = list(map(lambda x: x.id, l)).index(self.id)
+        oldIndex = list(map(lambda x: x.id, categories)).index(self.id)
         if oldIndex < 0:
             raise Exception()  # Something went wrong
-        e = l.pop(oldIndex)
+        e = categories.pop(oldIndex)
 
-        l.insert(self.ordering, e)
+        categories.insert(self.ordering, e)
 
-        for i, category in enumerate(l):
+        for i, category in enumerate(categories):
             category.ordering = i
 
         try:
-            db.session.add_all(l)
+            db.session.add_all(categories)
             db.session.commit()
         except Exception as e:
             db.session.rollback()

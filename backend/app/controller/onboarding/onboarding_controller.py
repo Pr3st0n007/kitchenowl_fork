@@ -1,7 +1,9 @@
+from flask import Blueprint, jsonify
+
 from app.config import DISABLE_ONBOARDING
 from app.helpers import validate_args
-from flask import jsonify, Blueprint
-from app.models import User, Token
+from app.models import Token, User
+
 from .schemas import OnboardSchema
 
 onboarding = Blueprint("onboarding", __name__)

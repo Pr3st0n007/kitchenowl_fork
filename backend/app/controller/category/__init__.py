@@ -1,1 +1,4 @@
-from .category_controller import category, categoryHousehold
+from .category_controller import (
+    category as category,
+    categoryHousehold as categoryHousehold,
+)

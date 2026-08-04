@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
-from app.models import Household, Expense, ExpensePaidFor, ExpenseCategory
+from datetime import UTC, datetime
+
+from app.models import Expense, ExpenseCategory, ExpensePaidFor, Household
 from app.service.file_has_access_or_download import file_has_access_or_download
 
 
@@ -7,7 +8,7 @@ def importExpense(household: Household, args: dict):
     expense = Expense()
     expense.household = household
     expense.name = args["name"]
-    expense.date = datetime.fromtimestamp(args["date"] / 1000, timezone.utc)
+    expense.date = datetime.fromtimestamp(args["date"] / 1000, UTC)
     expense.amount = args["amount"]
     if "photo" in args:
         expense.photo = file_has_access_or_download(args["photo"])

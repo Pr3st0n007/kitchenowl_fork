@@ -1,6 +1,7 @@
-from app.helpers import server_admin_required
-from flask import jsonify, Blueprint
+from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
+
+from app.helpers import server_admin_required
 from app.models import Settings
 
 settings = Blueprint("settings", __name__)

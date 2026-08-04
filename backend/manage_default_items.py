@@ -1,13 +1,13 @@
 import argparse
 import json
 import os
-import requests
 
+import requests
 from sqlalchemy import desc, func
+
 from app import app
 from app.config import STORAGE_PATH
-from app.models import Item, Category, Household
-
+from app.models import Category, Household, Item
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 EXPORT_FOLDER = STORAGE_PATH + "/export"
@@ -47,7 +47,7 @@ def update_names(saveToTemplate: bool = False, consensus_count: int = 2):
         Item.query.with_entities(
             Item.name, func.count().label("count"), Household.language
         )
-        .filter(Item.default_key == None, Household.language.in_(supported_lang))
+        .filter(Item.default_key.is_(None), Household.language.in_(supported_lang))
         .join(Household, isouter=True)
         .group_by(Item.name, Household.language)
         .having(func.count().label("count") >= consensus_count)
@@ -106,7 +106,7 @@ def update_attributes(saveToTemplate: bool = False):
         # Find icon consesus
         iconItem = (
             Item.query.with_entities(Item.icon, func.count().label("count"))
-            .filter(Item.default_key == key, Item.icon != None)
+            .filter(Item.default_key == key, Item.icon.is_not(None))
             .group_by(Item.icon)
             .order_by(desc("count"))
             .first()
@@ -118,14 +118,14 @@ def update_attributes(saveToTemplate: bool = False):
     for key in en["items"].keys():
         filterQuery = (
             Item.query.with_entities(Item.category_id)
-            .filter(Item.default_key == key, Item.category_id != None)
+            .filter(Item.default_key == key, Item.category_id.is_not(None))
             .scalar_subquery()
         )
         itemCategory = (
             Category.query.with_entities(
                 Category.default_key, func.count().label("count")
             )
-            .filter(Category.id.in_(filterQuery), Category.default_key != None)
+            .filter(Category.id.in_(filterQuery), Category.default_key.is_not(None))
             .group_by(Category.default_key)
             .order_by(desc("count"))
             .first()

@@ -1,6 +1,7 @@
 from sqlalchemy import func
-from app.models import Expense, ExpensePaidFor, HouseholdMember
+
 from app import db
+from app.models import Expense, ExpensePaidFor, HouseholdMember
 
 
 def recalculateBalances(household_id: int):

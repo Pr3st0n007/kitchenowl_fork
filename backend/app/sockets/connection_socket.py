@@ -1,8 +1,8 @@
 from flask_jwt_extended import current_user
 from flask_socketio import join_room
 
-from app.helpers import socket_jwt_required
 from app import socketio
+from app.helpers import socket_jwt_required
 
 
 @socketio.on("connect")

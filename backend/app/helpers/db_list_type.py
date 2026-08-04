@@ -1,5 +1,6 @@
-from sqlalchemy.types import String, TypeDecorator
 import json
+
+from sqlalchemy.types import String, TypeDecorator
 
 
 # Represents a List in the DataBase (i.e. [e1, e2, e3, ...])

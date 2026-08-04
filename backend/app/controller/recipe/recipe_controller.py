@@ -1,24 +1,26 @@
 import re
+
+from flask import Blueprint, jsonify
+from flask_jwt_extended import current_user, jwt_required
 from sqlalchemy import desc, func
+
+from app import db
 from app.config import FRONT_URL
 from app.errors import NotFoundRequest
-from app.models import Household, RecipeItems, RecipeTags
-from flask import jsonify, Blueprint
-from flask_jwt_extended import current_user, jwt_required
-from app import db
-from app.helpers import validate_args, authorize_household
-from app.models import Recipe, Item, Tag
+from app.helpers import authorize_household, validate_args
+from app.models import Household, Item, Recipe, RecipeItems, RecipeTags, Tag
 from app.models.recipe import RecipeVisibility
 from app.service.file_has_access_or_download import file_has_access_or_download
 from app.service.recipe_scraping import scrape
+
 from .schemas import (
-    SearchByNameRequest,
     AddRecipe,
-    SearchByTagRequest,
-    UpdateRecipe,
     GetAllFilterRequest,
     ScrapeRecipe,
+    SearchByNameRequest,
+    SearchByTagRequest,
     SuggestionsRecipe,
+    UpdateRecipe,
 )
 
 recipe = Blueprint("recipe", __name__)
@@ -133,7 +135,7 @@ def addRecipe(args, household_id):
 @recipe.route("/<int:id>", methods=["POST"])
 @jwt_required()
 @validate_args(UpdateRecipe)
-def updateRecipe(args, id):  # noqa: C901
+def updateRecipe(args, id):
     recipe = Recipe.find_by_id(id)
     if not recipe:
         raise NotFoundRequest()
@@ -216,7 +218,7 @@ def deleteRecipeById(id):
 @authorize_household()
 @validate_args(SearchByNameRequest)
 def searchRecipeInHouseholdByName(args, household_id):
-    if "only_ids" in args and args["only_ids"]:
+    if args.get("only_ids"):
         return jsonify([e.id for e in Recipe.search_name(args["query"], household_id)])
     return jsonify(
         [e.obj_to_full_dict() for e in Recipe.search_name(args["query"], household_id)]
@@ -379,7 +381,7 @@ def newestRecipes(args, page):
 @jwt_required()
 @validate_args(SearchByNameRequest)
 def searchAllRecipeByName(args):
-    if "only_ids" in args and args["only_ids"]:
+    if args.get("only_ids"):
         return jsonify(
             [
                 e.id

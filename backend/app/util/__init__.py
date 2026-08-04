@@ -1,2 +1,2 @@
-from .kitchenowl_json_provider import KitchenOwlJSONProvider
-from .multi_dict_list import MultiDictList
+from .kitchenowl_json_provider import KitchenOwlJSONProvider as KitchenOwlJSONProvider
+from .multi_dict_list import MultiDictList as MultiDictList

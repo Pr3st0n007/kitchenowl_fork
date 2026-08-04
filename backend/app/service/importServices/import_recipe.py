@@ -1,4 +1,4 @@
-from app.models import Recipe, RecipeTags, RecipeItems, Item, Tag
+from app.models import Item, Recipe, RecipeItems, RecipeTags, Tag
 from app.service.file_has_access_or_download import file_has_access_or_download
 
 

@@ -5,8 +5,8 @@ Revises: 0c1f16a519d1
 Create Date: 2024-09-04 19:09:24.699528
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import orm
 
 DeclarativeBase = orm.declarative_base()

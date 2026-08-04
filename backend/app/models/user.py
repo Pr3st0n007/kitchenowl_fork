@@ -1,27 +1,28 @@
-from typing import Any, Optional, Self, List, TYPE_CHECKING, cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from flask_jwt_extended import current_user
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.config import bcrypt
-from sqlalchemy.orm import Mapped
-from sqlalchemy import DateTime, func
-from datetime import datetime, timezone
 
 Model = db.Model
 if TYPE_CHECKING:
+    from app.helpers.db_model_base import DbModelBase
     from app.models import (
-        Token,
-        ChallengePasswordReset,
         ChallengeMailVerify,
-        HouseholdMember,
+        ChallengePasswordReset,
         Expense,
         ExpensePaidFor,
         File,
+        HouseholdMember,
         OIDCLink,
         OIDCRequest,
         Report,
+        Token,
     )
-    from app.helpers.db_model_base import DbModelBase
 
     Model = DbModelBase
 
@@ -37,24 +38,24 @@ class User(Model):
         nullable=False,
         index=True,
     )
-    email: Mapped[Optional[str]] = db.Column(
+    email: Mapped[str | None] = db.Column(
         db.String(256),
         unique=True,
         nullable=True,
         index=True,
     )
-    password: Mapped[Optional[str]] = db.Column(db.String(256), nullable=True)
+    password: Mapped[str | None] = db.Column(db.String(256), nullable=True)
     photo: Mapped[str | None] = db.Column(
         db.String(), db.ForeignKey("file.filename", use_alter=True)
     )
     admin: Mapped[bool] = db.Column(db.Boolean(), default=False)
     email_verified: Mapped[bool] = db.Column(db.Boolean(), default=False)
-    last_seen: Mapped[Optional[datetime]] = db.Column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=True
+    last_seen: Mapped[datetime | None] = db.Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=True
     )
 
-    tokens: Mapped[List["Token"]] = cast(
-        Mapped[List["Token"]],
+    tokens: Mapped[list[Token]] = cast(
+        Mapped[list["Token"]],
         db.relationship(
             "Token",
             back_populates="user",
@@ -62,16 +63,16 @@ class User(Model):
         ),
     )
 
-    password_reset_challenge: Mapped[List["ChallengePasswordReset"]] = cast(
-        Mapped[List["ChallengePasswordReset"]],
+    password_reset_challenge: Mapped[list[ChallengePasswordReset]] = cast(
+        Mapped[list["ChallengePasswordReset"]],
         db.relationship(
             "ChallengePasswordReset",
             back_populates="user",
             cascade="all, delete-orphan",
         ),
     )
-    verify_mail_challenge: Mapped[List["ChallengeMailVerify"]] = cast(
-        Mapped[List["ChallengeMailVerify"]],
+    verify_mail_challenge: Mapped[list[ChallengeMailVerify]] = cast(
+        Mapped[list["ChallengeMailVerify"]],
         db.relationship(
             "ChallengeMailVerify",
             back_populates="user",
@@ -79,8 +80,8 @@ class User(Model):
         ),
     )
 
-    households: Mapped[List["HouseholdMember"]] = cast(
-        Mapped[List["HouseholdMember"]],
+    households: Mapped[list[HouseholdMember]] = cast(
+        Mapped[list["HouseholdMember"]],
         db.relationship(
             "HouseholdMember",
             back_populates="user",
@@ -88,23 +89,23 @@ class User(Model):
         ),
     )
 
-    expenses_paid: Mapped[List["Expense"]] = cast(
-        Mapped[List["Expense"]],
+    expenses_paid: Mapped[list[Expense]] = cast(
+        Mapped[list["Expense"]],
         db.relationship(
             "Expense",
             back_populates="paid_by",
             cascade="all, delete-orphan",
         ),
     )
-    expenses_paid_for: Mapped[List["ExpensePaidFor"]] = cast(
-        Mapped[List["ExpensePaidFor"]],
+    expenses_paid_for: Mapped[list[ExpensePaidFor]] = cast(
+        Mapped[list["ExpensePaidFor"]],
         db.relationship(
             "ExpensePaidFor",
             back_populates="user",
             cascade="all, delete-orphan",
         ),
     )
-    photo_file: Mapped["File"] = cast(
+    photo_file: Mapped[File] = cast(
         Mapped["File"],
         db.relationship(
             "File",
@@ -114,16 +115,16 @@ class User(Model):
         ),
     )
 
-    oidc_links: Mapped[List["OIDCLink"]] = cast(
-        Mapped[List["OIDCLink"]],
+    oidc_links: Mapped[list[OIDCLink]] = cast(
+        Mapped[list["OIDCLink"]],
         db.relationship(
             "OIDCLink",
             back_populates="user",
             cascade="all, delete-orphan",
         ),
     )
-    oidc_link_requests: Mapped[List["OIDCRequest"]] = cast(
-        Mapped[List["OIDCRequest"]],
+    oidc_link_requests: Mapped[list[OIDCRequest]] = cast(
+        Mapped[list["OIDCRequest"]],
         db.relationship(
             "OIDCRequest",
             back_populates="user",
@@ -131,16 +132,16 @@ class User(Model):
         ),
     )
 
-    created_reports: Mapped[List["Report"]] = cast(
-        Mapped[List["Report"]],
+    created_reports: Mapped[list[Report]] = cast(
+        Mapped[list["Report"]],
         db.relationship(
             "Report",
             foreign_keys="[Report.created_by_id]",
             back_populates="created_by",
         ),
     )
-    reports: Mapped[List["Report"]] = cast(
-        Mapped[List["Report"]],
+    reports: Mapped[list[Report]] = cast(
+        Mapped[list["Report"]],
         db.relationship(
             "Report",
             foreign_keys="[Report.user_id]",

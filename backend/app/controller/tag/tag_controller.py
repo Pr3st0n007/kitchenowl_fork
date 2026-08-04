@@ -1,8 +1,10 @@
-from app.helpers import validate_args, authorize_household
-from flask import jsonify, Blueprint
-from app.errors import NotFoundRequest
+from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
-from app.models import Tag, RecipeTags, Recipe
+
+from app.errors import NotFoundRequest
+from app.helpers import authorize_household, validate_args
+from app.models import Recipe, RecipeTags, Tag
+
 from .schemas import AddTag, UpdateTag
 
 tag = Blueprint("tag", __name__)
@@ -82,8 +84,9 @@ def updateTag(args, id):
 @tag.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def deleteTagById(id):
-    from app import db
     from sqlalchemy.exc import SQLAlchemyError
+
+    from app import db
 
     tag = Tag.find_by_id(id)
     if not tag:

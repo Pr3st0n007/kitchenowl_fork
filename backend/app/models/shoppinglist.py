@@ -1,12 +1,14 @@
-from typing import Any, Self, List, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, History, Item, Shoppinglist, User
     from app.helpers.db_model_base import DbModelBase
+    from app.models import History, Household, Item, Shoppinglist, User
 
     Model = DbModelBase
 
@@ -21,23 +23,23 @@ class Shoppinglist(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("household.id"), nullable=False, index=True
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    items: Mapped[List["ShoppinglistItems"]] = cast(
-        Mapped[List["ShoppinglistItems"]],
+    items: Mapped[list["ShoppinglistItems"]] = cast(
+        Mapped[list["ShoppinglistItems"]],
         db.relationship(
             "ShoppinglistItems",
             cascade="all, delete-orphan",
         ),
     )
 
-    history: Mapped[List["History"]] = cast(
-        Mapped[List["History"]],
+    history: Mapped[list[History]] = cast(
+        Mapped[list["History"]],
         db.relationship(
             "History",
             back_populates="shoppinglist",
@@ -70,21 +72,21 @@ class ShoppinglistItems(Model):
         db.Integer, db.ForeignKey("user.id"), nullable=True
     )
 
-    item: Mapped["Item"] = cast(
+    item: Mapped[Item] = cast(
         Mapped["Item"],
         db.relationship(
             "Item",
             back_populates="shoppinglists",
         ),
     )
-    shoppinglist: Mapped["Shoppinglist"] = cast(
+    shoppinglist: Mapped[Shoppinglist] = cast(
         Mapped["Shoppinglist"],
         db.relationship(
             "Shoppinglist",
             back_populates="items",
         ),
     )
-    created_by_user: Mapped["User"] = cast(
+    created_by_user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -95,10 +97,10 @@ class ShoppinglistItems(Model):
 
     def obj_to_item_dict(self) -> dict[str, Any]:
         res = self.item.obj_to_dict()
-        res["description"] = getattr(self, "description")
-        res["created_at"] = getattr(self, "created_at")
-        res["updated_at"] = getattr(self, "updated_at")
-        res["created_by"] = getattr(self, "created_by")
+        res["description"] = self.description
+        res["created_at"] = self.created_at
+        res["updated_at"] = self.updated_at
+        res["created_by"] = self.created_by
         return res
 
     @classmethod

@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_onboarding_status_true(client):

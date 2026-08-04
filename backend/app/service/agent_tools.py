@@ -11,29 +11,30 @@ Each tool takes a single ``args`` dict and returns a JSON-serialisable value.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from flask_jwt_extended import current_user
 
 from app import db
 from app.errors import NotFoundRequest
 from app.models import (
-    AgentRecipeCard,
-    AgentChat,
     CARD_SOURCE_EXISTING,
+    AgentChat,
+    AgentRecipeCard,
+    Expense,
     History,
     Household,
     HouseholdMember,
     Item,
     LLMConfig,
+    Planner,
     Recipe,
     RecipeItems,
     RecipeTags,
     Shoppinglist,
     ShoppinglistItems,
-    Expense,
-    Planner,
     Tag,
 )
 from app.models.recipe import RecipeVisibility

@@ -1,13 +1,15 @@
+import time
 from os import listdir
 from os.path import isfile, join
-import time
+
 import blurhash
 from PIL import Image
 from tqdm import tqdm
+
 from app import app, db
 from app.config import UPLOAD_FOLDER
 from app.jobs import jobs
-from app.models import User, File, Household, HouseholdMember, ChallengeMailVerify
+from app.models import ChallengeMailVerify, File, Household, HouseholdMember, User
 from app.service import mail
 from app.service.delete_unused import deleteEmptyHouseholds, deleteUnusedFiles
 from app.service.recalculate_blurhash import recalculateBlurhashes
@@ -97,7 +99,7 @@ What next?
             delay = float(input("Delay between mails in seconds (0):") or "0")
             for user in tqdm(
                 User.query.filter(
-                    (User.email_verified == False) | (User.email_verified == None)
+                    (User.email_verified.is_(False)) | (User.email_verified.is_(None))
                 ).all(),
                 desc="Sending mails",
             ):

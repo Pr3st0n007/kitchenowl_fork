@@ -207,13 +207,16 @@ class OpenAICompatibleProvider(LLMProvider):
             raise LLMError(f"litellm is not available: {exc}") from exc
 
         model = self.config.icon_generation_model or "dall-e-3"
-        
+
+        if self.config.provider == LLMProviderType.GEMINI and "/" not in model:
+            model = f"gemini/{model}"
+
         kwargs: dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "api_key": self.config.get_api_key(),
         }
-        
+
         base_url = self.config.effective_base_url()
         if base_url:
             kwargs["api_base"] = base_url
@@ -224,6 +227,7 @@ class OpenAICompatibleProvider(LLMProvider):
         except Exception as exc:
             _logger.warning("LLM image generation failed: %s", exc, exc_info=True)
             raise LLMError(str(exc)) from exc
+
 
 def _normalize_response(response: Any) -> LLMResponse:
     """Normalise a litellm ``ModelResponse`` into our :class:`LLMResponse`.

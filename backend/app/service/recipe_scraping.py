@@ -1,16 +1,17 @@
 import re
 from typing import Any
-from recipe_scrapers import scrape_html
-from recipe_scrapers._exceptions import SchemaOrgException
-from recipe_scrapers.__version__ import __version__ as recipe_scrapers_version
-from requests_hardened import Config, Manager
+
 import requests
+from recipe_scrapers import scrape_html
+from recipe_scrapers.__version__ import __version__ as recipe_scrapers_version
+from recipe_scrapers._exceptions import SchemaOrgException
+from requests_hardened import Config, Manager
+
 from app.config import FRONT_URL
 from app.errors import ForbiddenRequest
+from app.models import Household, Item, Recipe
 from app.models.recipe import RecipeVisibility
 from app.service.ingredient_parsing import parseIngredients
-
-from app.models import Recipe, Item, Household
 
 # taken from the recipe-scrapers library to circumvent anti-scraping measures that block requests with the default user agent
 USER_AGENT = f"Mozilla/5.0 (compatible; Windows NT 10.0; Win64; x64; rv:{recipe_scrapers_version}) recipe-scrapers/{recipe_scrapers_version}"

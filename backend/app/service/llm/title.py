@@ -27,7 +27,7 @@ _TITLE_MAX_USER_CHARS = 600
 _TITLE_MAX_ASSISTANT_CHARS = 400
 
 
-def _format_for_title(messages: "list[AgentMessage]") -> str:
+def _format_for_title(messages: list[AgentMessage]) -> str:
     from app.models import AgentMessageRole
 
     parts: list[str] = []
@@ -51,10 +51,8 @@ def _sanitise_title(raw: str | None) -> str | None:
         return None
     # Strip enclosing quotes the model sometimes adds.
     for quote in ('"', "'", "“", "”", "‘", "’", "«", "»"):
-        if title.startswith(quote):
-            title = title[len(quote) :]
-        if title.endswith(quote):
-            title = title[: -len(quote)]
+        title = title.removeprefix(quote)
+        title = title.removesuffix(quote)
     title = title.strip().rstrip(".!?:;,")
     # One line only -- defensive against model preamble.
     title = title.splitlines()[0].strip()
@@ -64,9 +62,9 @@ def _sanitise_title(raw: str | None) -> str | None:
 
 
 def generate_chat_title(
-    config: "LLMConfig",
-    chat: "AgentChat",
-    persona: "AgentPersona | None" = None,
+    config: LLMConfig,
+    chat: AgentChat,
+    persona: AgentPersona | None = None,
 ) -> str | None:
     """Ask the LLM for a short title for ``chat``. Errors return ``None``."""
     if not config.is_ready():
