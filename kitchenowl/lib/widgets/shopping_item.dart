@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:kitchenowl/item_icons.dart';
 import 'package:kitchenowl/models/item.dart';
-import 'package:kitchenowl/services/storage/storage.dart';
 import 'package:kitchenowl/styles/dynamic.dart';
+import 'package:kitchenowl/widgets/image_provider.dart';
 import 'package:kitchenowl/widgets/selectable_button_card.dart';
 import 'package:kitchenowl/widgets/selectable_button_list_tile.dart';
 

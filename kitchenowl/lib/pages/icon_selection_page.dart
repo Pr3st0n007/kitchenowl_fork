@@ -4,7 +4,6 @@ import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/item.dart';
 import 'package:kitchenowl/models/household.dart';
 import 'package:kitchenowl/services/api/api_service.dart';
-import 'package:kitchenowl/services/api/agent.dart';
 
 class IconSelectionPage extends StatefulWidget {
   final String? oldIcon;

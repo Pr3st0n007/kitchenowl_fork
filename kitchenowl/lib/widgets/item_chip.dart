@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:kitchenowl/item_icons.dart';
 import 'package:kitchenowl/models/item.dart';
-import 'package:kitchenowl/services/storage/storage.dart';
+import 'package:kitchenowl/widgets/image_provider.dart';
 
 class ItemChip extends StatelessWidget {
   final Item item;
