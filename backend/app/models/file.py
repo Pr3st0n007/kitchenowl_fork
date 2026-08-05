@@ -1,20 +1,22 @@
 from __future__ import annotations
-from typing import Self, TYPE_CHECKING, cast
+
+import os
+from typing import TYPE_CHECKING, Self, cast
 
 from flask_jwt_extended import current_user
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.config import UPLOAD_FOLDER
 from app.errors import ForbiddenRequest
 from app.helpers import DbModelAuthorizeMixin
 from app.models.recipe import RecipeVisibility
 from app.models.user import User
-import os
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, Recipe, Expense
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Expense, Household, Recipe
 
     Model = DbModelBase
 
@@ -28,7 +30,7 @@ class File(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("user.id"), nullable=True
     )
 
-    created_by_user: Mapped["User"] = cast(
+    created_by_user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -37,28 +39,28 @@ class File(Model, DbModelAuthorizeMixin):
         ),
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    recipe: Mapped["Recipe"] = cast(
+    recipe: Mapped[Recipe] = cast(
         Mapped["Recipe"],
         db.relationship(
             "Recipe",
             uselist=False,
         ),
     )
-    expense: Mapped["Expense"] = cast(
+    expense: Mapped[Expense] = cast(
         Mapped["Expense"],
         db.relationship(
             "Expense",
             uselist=False,
         ),
     )
-    profile_picture: Mapped["User"] = cast(
+    profile_picture: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",

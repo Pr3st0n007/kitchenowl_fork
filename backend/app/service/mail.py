@@ -1,11 +1,12 @@
 import logging
+import os
 import smtplib
 import ssl
-import os
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.utils import formatdate
-from app.config import app, get_secret, FRONT_URL
+
+from app.config import FRONT_URL, app, get_secret
 from app.models import User
 
 _logger = logging.getLogger(__name__)
@@ -69,28 +70,26 @@ def sendVerificationMail(userId: int, token: str):
 
         message = MIMEMultipart("alternative")
         message["Subject"] = "Verify Email"
-        text = """\
-Hi {name} (@{username}),
+        text = f"""\
+Hi {user.name} (@{user.username}),
 
 Verify your email so we know it's really you, and you don't lose access to your account.
-Verify email address: {link}
+Verify email address: {verifyLink}
 
-Have any questions? Check out https://kitchenowl.org/privacy/""".format(
-            name=user.name, username=user.username, link=verifyLink
-        )
-        html = """\
+Have any questions? Check out https://kitchenowl.org/privacy/"""
+        html = f"""\
 <html>
 <body>
-    <p>Hi {name} (@{username}),<br><br>
+    <p>Hi {user.name} (@{user.username}),<br><br>
 
     Verify your email so we know it's really you, and you don't lose access to your account.<br>
-    <a href="{link}">Verify email address</a><br><br>
+    <a href="{verifyLink}">Verify email address</a><br><br>
 
     Have any questions? Check out our <a href="https://kitchenowl.org/privacy/">Privacy Policy</a>
     </p>
 </body>
 </html>
-        """.format(name=user.name, username=user.username, link=verifyLink)
+        """
         # The email client will try to render the last part first
         message.attach(MIMEText(text, "plain"))
         message.attach(MIMEText(html, "html"))
@@ -105,24 +104,22 @@ def sendPasswordResetMail(user: User, token: str):
 
     message = MIMEMultipart("alternative")
     message["Subject"] = "Reset password"
-    text = """\
-Hi {name} (@{username}),
+    text = f"""\
+Hi {user.name} (@{user.username}),
 
 We received a request to change your password. This link is valid for three hours.
-Reset password: {link}
+Reset password: {resetLink}
 
 If you didn't request a password reset, you can ignore this message and continue to use your current password.
 
-Have any questions? Check out https://kitchenowl.org/privacy/""".format(
-        name=user.name, username=user.username, link=resetLink
-    )
-    html = """\
+Have any questions? Check out https://kitchenowl.org/privacy/"""
+    html = f"""\
 <html>
 <body>
-    <p>Hi {name} (@{username}),<br><br>
+    <p>Hi {user.name} (@{user.username}),<br><br>
 
     We received a request to change your password. This link is valid for three hours:<br>
-    <a href="{link}">Reset password</a><br><br>
+    <a href="{resetLink}">Reset password</a><br><br>
 
     If you didn't request a password reset, you can ignore this message and continue to use your current password.<br><br>
 
@@ -130,7 +127,7 @@ Have any questions? Check out https://kitchenowl.org/privacy/""".format(
     </p>
 </body>
 </html>
-    """.format(name=user.name, username=user.username, link=resetLink)
+    """
     # The email client will try to render the last part first
     message.attach(MIMEText(text, "plain"))
     message.attach(MIMEText(html, "html"))

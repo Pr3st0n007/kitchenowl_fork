@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kitchenowl/item_icons.dart';
 import 'package:kitchenowl/models/item.dart';
 import 'package:kitchenowl/styles/dynamic.dart';
+import 'package:kitchenowl/widgets/image_provider.dart';
 import 'package:kitchenowl/widgets/selectable_button_card.dart';
 import 'package:kitchenowl/widgets/selectable_button_list_tile.dart';
 
@@ -32,11 +33,28 @@ class ShoppingItemWidget<T extends Item> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Widget? iconWidget;
+    if (item.icon != null && item.icon!.contains('.')) {
+      iconWidget = SizedBox(
+        width: 32,
+        height: 32,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Image(
+            image: getImageProvider(context, item.icon!, maxWidth: 128),
+            fit: BoxFit.cover,
+            color: gridStyle && selected ? Theme.of(context).colorScheme.onPrimary : null,
+          ),
+        ),
+      );
+    }
+
     return gridStyle
         ? SelectableButtonCard(
             title: item.name,
             selected: selected,
             icon: ItemIcons.get(item),
+            iconWidget: iconWidget,
             description: (item is ItemWithDescription)
                 ? (item as ItemWithDescription).description
                 : null,
@@ -49,6 +67,7 @@ class ShoppingItemWidget<T extends Item> extends StatelessWidget {
             title: item.name,
             selected: selected,
             icon: ItemIcons.get(item),
+            iconWidget: iconWidget,
             listStyle: listStyle,
             raised: raised ??
                 item is ShoppinglistItem || item is RecipeItem && selected,

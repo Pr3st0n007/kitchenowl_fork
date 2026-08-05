@@ -1,12 +1,14 @@
-from typing import Any, Self, List, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, RecipeTags
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Household, RecipeTags
 
     Model = DbModelBase
 
@@ -21,15 +23,15 @@ class Tag(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("household.id"), nullable=False
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    recipes: Mapped[List["RecipeTags"]] = cast(
-        Mapped[List["RecipeTags"]],
+    recipes: Mapped[list[RecipeTags]] = cast(
+        Mapped[list["RecipeTags"]],
         db.relationship(
             "RecipeTags",
             back_populates="tag",

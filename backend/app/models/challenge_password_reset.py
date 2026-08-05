@@ -1,16 +1,19 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
+
 import hashlib
-from typing import Self, TYPE_CHECKING, cast
 import uuid
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.models.user import User
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import User
     from app.helpers.db_model_base import DbModelBase
+    from app.models import User
 
     Model = DbModelBase
 
@@ -21,7 +24,7 @@ class ChallengePasswordReset(Model):
         db.Integer, db.ForeignKey("user.id"), nullable=False
     )
 
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -30,7 +33,7 @@ class ChallengePasswordReset(Model):
 
     @classmethod
     def find_by_challenge(cls, challenge: str) -> Self | None:
-        filter_before = datetime.now(timezone.utc) - timedelta(hours=3)
+        filter_before = datetime.now(UTC) - timedelta(hours=3)
         return cls.query.filter(
             cls.challenge_hash == hashlib.sha256(bytes(challenge, "utf-8")).hexdigest(),
             cls.created_at >= filter_before,
@@ -52,6 +55,6 @@ class ChallengePasswordReset(Model):
 
     @classmethod
     def delete_expired(cls):
-        filter_before = datetime.now(timezone.utc) - timedelta(hours=3)
+        filter_before = datetime.now(UTC) - timedelta(hours=3)
         db.session.query(cls).filter(cls.created_at <= filter_before).delete()
         db.session.commit()

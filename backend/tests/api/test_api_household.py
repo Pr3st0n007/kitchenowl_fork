@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_get_all_households_empty(admin_client):

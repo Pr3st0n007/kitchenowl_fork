@@ -70,6 +70,8 @@ class AgentSettingsCubit extends Cubit<AgentSettingsState> {
     String? braveSearchApiKey,
     String? systemPrompt,
     String? initialGreeting,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
     bool? enabled,
     int? maxTokens,
     double? temperature,
@@ -84,6 +86,8 @@ class AgentSettingsCubit extends Cubit<AgentSettingsState> {
       braveSearchApiKey: braveSearchApiKey,
       systemPrompt: systemPrompt,
       initialGreeting: initialGreeting,
+      iconGenerationPrompt: iconGenerationPrompt,
+      iconGenerationModel: iconGenerationModel,
       enabled: enabled,
       maxTokens: maxTokens,
       temperature: temperature,
@@ -96,9 +100,24 @@ class AgentSettingsCubit extends Cubit<AgentSettingsState> {
     return true;
   }
 
-  Future<void> testConnection() async {
+  Future<void> testConnection({
+    LLMProvider? provider,
+    String? baseUrl,
+    String? model,
+    String? apiKey,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
+  }) async {
     emit(state.copyWith(testing: true, clearTest: true));
-    final result = await ApiService.getInstance().testAgentConfig(household);
+    final result = await ApiService.getInstance().testAgentConfig(
+      household,
+      provider: provider,
+      baseUrl: baseUrl,
+      model: model,
+      apiKey: apiKey,
+      iconGenerationPrompt: iconGenerationPrompt,
+      iconGenerationModel: iconGenerationModel,
+    );
     emit(state.copyWith(
       testing: false,
       testOk: result.ok,

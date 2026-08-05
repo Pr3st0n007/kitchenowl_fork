@@ -1,12 +1,16 @@
 import os
-from app.config import UPLOAD_FOLDER, db, app
-from app.models import File
+
 import blurhash
 from PIL import Image
 
+from app.config import UPLOAD_FOLDER, app, db
+from app.models import File
+
 
 def recalculateBlurhashes(updateAll: bool = False) -> int:
-    files = File.all() if updateAll else File.query.filter(File.blur_hash == None).all()
+    files = (
+        File.all() if updateAll else File.query.filter(File.blur_hash.is_(None)).all()
+    )
     for file in files:
         try:
             with Image.open(os.path.join(UPLOAD_FOLDER, file.filename)) as image:

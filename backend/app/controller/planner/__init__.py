@@ -1,1 +1,1 @@
-from .planner_controller import plannerHousehold
+from .planner_controller import plannerHousehold as plannerHousehold

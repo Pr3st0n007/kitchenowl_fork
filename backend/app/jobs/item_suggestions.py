@@ -1,10 +1,10 @@
-from app import app, db
-from app.models import Item, Association
-
 import pandas as pd
 from mlxtend.frequent_patterns import apriori
-from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import association_rules as arule
+from mlxtend.preprocessing import TransactionEncoder
+
+from app import app, db
+from app.models import Association, Item
 
 
 def findItemSuggestions(shopping_instances):

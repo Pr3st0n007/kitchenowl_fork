@@ -1,24 +1,26 @@
 import calendar
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+
 from dateutil.relativedelta import relativedelta
-from sqlalchemy.sql.expression import desc
-from sqlalchemy import or_
-from app.errors import NotFoundRequest
-from flask import jsonify, Blueprint
+from flask import Blueprint, jsonify
 from flask_jwt_extended import current_user, jwt_required
-from sqlalchemy import func
+from sqlalchemy import func, or_
+from sqlalchemy.sql.expression import desc
+
 from app import db
-from app.helpers import validate_args, authorize_household, RequiredRights
-from app.models import Expense, ExpensePaidFor, ExpenseCategory, HouseholdMember
-from app.service.recalculate_balances import recalculateBalances
+from app.errors import NotFoundRequest
+from app.helpers import RequiredRights, authorize_household, validate_args
+from app.models import Expense, ExpenseCategory, ExpensePaidFor, HouseholdMember
 from app.service.file_has_access_or_download import file_has_access_or_download
+from app.service.recalculate_balances import recalculateBalances
+
 from .schemas import (
-    GetExpenses,
     AddExpense,
-    UpdateExpense,
     AddExpenseCategory,
-    UpdateExpenseCategory,
     GetExpenseOverview,
+    GetExpenses,
+    UpdateExpense,
+    UpdateExpenseCategory,
 )
 
 expense = Blueprint("expense", __name__)
@@ -35,13 +37,11 @@ def getAllExpenses(args, household_id):
         filter.append(Expense.id < args["startAfterId"])
     if "startAfterDate" in args:
         filter.append(
-            Expense.date
-            < datetime.fromtimestamp(args["startAfterDate"] / 1000, timezone.utc)
+            Expense.date < datetime.fromtimestamp(args["startAfterDate"] / 1000, UTC)
         )
     if "endBeforeDate" in args:
         filter.append(
-            Expense.date
-            > datetime.fromtimestamp(args["endBeforeDate"] / 1000, timezone.utc)
+            Expense.date > datetime.fromtimestamp(args["endBeforeDate"] / 1000, UTC)
         )
 
     if "view" in args and args["view"] == 1:
@@ -56,13 +56,14 @@ def getAllExpenses(args, household_id):
         if None in args["filter"]:
             filter.append(
                 or_(
-                    Expense.category_id == None, Expense.category_id.in_(args["filter"])
+                    Expense.category_id.is_(None),
+                    Expense.category_id.in_(args["filter"]),
                 )
             )
         else:
             filter.append(Expense.category_id.in_(args["filter"]))
 
-    if "search" in args and args["search"]:
+    if args.get("search"):
         if "*" in args["search"] or "_" in args["search"]:
             query = (
                 args["search"].replace("_", "__").replace("*", "%").replace("?", "_")
@@ -108,7 +109,7 @@ def addExpense(args, household_id):
     if "description" in args:
         expense.description = args["description"]
     if "date" in args:
-        expense.date = datetime.fromtimestamp(args["date"] / 1000, timezone.utc)
+        expense.date = datetime.fromtimestamp(args["date"] / 1000, UTC)
     if "photo" in args and args["photo"] != expense.photo:
         expense.photo = file_has_access_or_download(args["photo"], expense.photo)
     if "category" in args:
@@ -144,7 +145,7 @@ def addExpense(args, household_id):
 @expense.route("/<int:id>", methods=["POST"])
 @jwt_required()
 @validate_args(UpdateExpense)
-def updateExpense(args, id):  # noqa: C901
+def updateExpense(args, id):
     expense = Expense.find_by_id(id)
     if not expense:
         raise NotFoundRequest()
@@ -157,7 +158,7 @@ def updateExpense(args, id):  # noqa: C901
     if "description" in args:
         expense.description = args["description"]
     if "date" in args:
-        expense.date = datetime.fromtimestamp(args["date"] / 1000, timezone.utc)
+        expense.date = datetime.fromtimestamp(args["date"] / 1000, UTC)
     if "photo" in args and args["photo"] != expense.photo:
         expense.photo = file_has_access_or_download(args["photo"], expense.photo)
     if "category" in args:
@@ -185,7 +186,7 @@ def updateExpense(args, id):  # noqa: C901
             if member:
                 con = ExpensePaidFor.find_by_ids(expense.id, member.user_id)
                 if con:
-                    if "factor" in user_data and user_data["factor"]:
+                    if user_data.get("factor"):
                         con.factor = user_data["factor"]
                 else:
                     con = ExpensePaidFor(
@@ -235,7 +236,7 @@ def getExpenseCategories(household_id):
 @authorize_household()
 @validate_args(GetExpenseOverview)
 def getExpenseOverview(args, household_id):
-    thisMonthStart = datetime.now(timezone.utc).date().replace(day=1)
+    thisMonthStart = datetime.now(UTC).date().replace(day=1)
 
     steps = args["steps"] if "steps" in args else 5
     frame = args["frame"] if "frame" in args and args["frame"] is not None else 2
@@ -245,7 +246,7 @@ def getExpenseOverview(args, household_id):
     by_category_query = (
         Expense.query.filter(
             Expense.household_id == household_id,
-            Expense.exclude_from_statistics == False,
+            Expense.exclude_from_statistics.is_(False),
         )
         .group_by(Expense.category_id, ExpenseCategory.id)
         .join(Expense.category, isouter=True)
@@ -259,7 +260,7 @@ def getExpenseOverview(args, household_id):
 
     by_subframe_query = Expense.query.filter(
         Expense.household_id == household_id,
-        Expense.exclude_from_statistics == False,
+        Expense.exclude_from_statistics.is_(False),
     ).group_by(
         func.to_char(Expense.date, groupByStr).label("day")
         if "postgresql" in db.engine.name
@@ -304,10 +305,10 @@ def getExpenseOverview(args, household_id):
         start = None
         end = None
         if frame == 0:  # daily
-            start = datetime.now(timezone.utc).date() - timedelta(days=stepAgo)
+            start = datetime.now(UTC).date() - timedelta(days=stepAgo)
             end = start + timedelta(hours=24)
         elif frame == 1:  # weekly
-            start = datetime.now(timezone.utc).date() - relativedelta(
+            start = datetime.now(UTC).date() - relativedelta(
                 days=7, weekday=calendar.MONDAY, weeks=stepAgo
             )
             end = start + timedelta(days=7)
@@ -315,9 +316,9 @@ def getExpenseOverview(args, household_id):
             start = thisMonthStart - relativedelta(months=stepAgo)
             end = start + relativedelta(months=1)
         elif frame == 3:  # yearly
-            start = datetime.now(timezone.utc).date().replace(
-                day=1, month=1
-            ) - relativedelta(years=stepAgo)
+            start = datetime.now(UTC).date().replace(day=1, month=1) - relativedelta(
+                years=stepAgo
+            )
             end = start + relativedelta(years=1)
 
         return Expense.date >= start, Expense.date <= end

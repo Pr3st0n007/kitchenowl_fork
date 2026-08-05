@@ -1,13 +1,51 @@
-from app.helpers import validate_args, authorize_household
-from flask import jsonify, Blueprint
-from app.errors import InvalidUsage, NotFoundRequest
-import app.util.description_splitter as description_splitter
+import os
+import uuid
+import base64
+
+import blurhash
+import requests
+from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
-from app.models import Item, RecipeItems, Recipe, Category
-from .schemas import SearchByNameRequest, UpdateItem, AddItem
+from PIL import Image
+from werkzeug.utils import secure_filename
+
+from app.config import UPLOAD_FOLDER
+from app.errors import InvalidUsage, NotFoundRequest
+from app.helpers import authorize_household, validate_args
+from app.models import Category, Item, Recipe, RecipeItems
+from app.models.file import File
+from app.models.llm_config import LLMConfig
+from app.service.llm.provider import LLMError, get_provider
+from app.util import description_splitter
+
+from .schemas import AddItem, SearchByNameRequest, UpdateItem
 
 item = Blueprint("item", __name__)
 itemHousehold = Blueprint("item", __name__)
+
+
+def _render_icon_prompt(template: str, subject: str) -> str:
+    prompt = template.replace("{name}", subject)
+    prompt = prompt.replace("[SUBJECT]", subject)
+    return prompt
+
+
+def _image_bytes_from_provider_response(image_ref: str) -> bytes:
+    if image_ref.startswith("data:image/"):
+        _, _, payload = image_ref.partition(",")
+        if not payload:
+            raise InvalidUsage("Generated image data URL was empty")
+        try:
+            return base64.b64decode(payload, validate=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise InvalidUsage(f"Generated image data URL was invalid: {exc}") from exc
+
+    try:
+        response = requests.get(image_ref, timeout=10)
+        response.raise_for_status()
+        return response.content
+    except Exception as exc:
+        raise InvalidUsage(f"Failed to download generated image: {exc}")
 
 
 @itemHousehold.route("", methods=["GET"])
@@ -38,7 +76,7 @@ def getItemRecipes(id):
     item.checkAuthorized()
     recipe = (
         RecipeItems.query.filter(RecipeItems.item_id == id)
-        .join(RecipeItems.recipe)  # noqa
+        .join(RecipeItems.recipe)
         .order_by(Recipe.name)
         .all()
     )
@@ -54,6 +92,58 @@ def deleteItemById(id):
     item.checkAuthorized()
     item.delete()
     return jsonify({"msg": "DONE"})
+
+
+@itemHousehold.route("/<int:id>/generate-icon", methods=["POST"])
+@jwt_required()
+@authorize_household()
+def generateItemIcon(household_id, id):
+    item = Item.find_by_id(id)
+    if not item or item.household_id != household_id:
+        raise NotFoundRequest()
+
+    cfg = LLMConfig.find_by_household(household_id)
+    if not cfg or not cfg.has_api_key():
+        raise InvalidUsage("LLM Provider is not configured")
+
+    try:
+        provider = get_provider(cfg)
+    except LLMError as exc:
+        raise InvalidUsage(str(exc))
+    prompt = (
+        cfg.icon_generation_prompt
+        or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
+    )
+    prompt = _render_icon_prompt(prompt, item.name)
+
+    try:
+        image_url = provider.generate_image(prompt)
+    except LLMError as exc:
+        raise InvalidUsage(str(exc))
+
+    image_bytes = _image_bytes_from_provider_response(image_url)
+
+    filename = secure_filename(str(uuid.uuid4()) + ".png")
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    with open(filepath, "wb") as f:
+        f.write(image_bytes)
+
+    blur = None
+    try:
+        with Image.open(filepath) as image:
+            image.thumbnail((100, 100))
+            blur = blurhash.encode(image, x_components=4, y_components=3)
+    except Exception:
+        pass
+
+    from flask_jwt_extended import current_user
+
+    f = File(filename=filename, blur_hash=blur, created_by=current_user.id).save()
+
+    item.icon = filename
+    item.save()
+
+    return jsonify(item.obj_to_dict())
 
 
 @itemHousehold.route("/search", methods=["GET"])

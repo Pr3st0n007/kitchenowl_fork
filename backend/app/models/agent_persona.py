@@ -25,7 +25,6 @@ from sqlalchemy.orm import Mapped
 
 from app import db
 
-
 Model = db.Model
 if TYPE_CHECKING:
     from app.helpers.db_model_base import DbModelBase
@@ -55,11 +54,11 @@ class AgentPersona(Model):
         db.Boolean(), nullable=False, default=False
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship("Household", uselist=False),
     )
-    user: Mapped["User | None"] = cast(
+    user: Mapped[User | None] = cast(
         Mapped["User | None"],
         db.relationship("User", uselist=False),
     )

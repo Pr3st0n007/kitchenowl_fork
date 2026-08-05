@@ -1,5 +1,6 @@
 import pytest
-import app.util.description_splitter as description_splitter
+
+from app.util import description_splitter
 
 
 @pytest.mark.parametrize(

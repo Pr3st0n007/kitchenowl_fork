@@ -5,9 +5,11 @@ Revises: 4b4823a384e7
 Create Date: 2023-03-03 15:05:29.932888
 
 """
-from alembic import op
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
-from datetime import datetime, timezone
+from alembic import op
+
 from app.helpers.db_set_type import DbSetType
 
 DeclarativeBase = sa.orm.declarative_base()
@@ -59,15 +61,15 @@ def upgrade():
                     p = Planner()
                     p.recipe_id = recipe.id
                     p.day = day
-                    p.created_at = datetime.now(timezone.utc)
-                    p.updated_at = datetime.now(timezone.utc)
+                    p.created_at = datetime.now(UTC)
+                    p.updated_at = datetime.now(UTC)
                     plans.append(p)
             else:
                 p = Planner()
                 p.recipe_id = recipe.id
                 p.day = -1
-                p.created_at = datetime.now(timezone.utc)
-                p.updated_at = datetime.now(timezone.utc)
+                p.created_at = datetime.now(UTC)
+                p.updated_at = datetime.now(UTC)
                 plans.append(p)
 
     try:

@@ -1,5 +1,6 @@
 import pytest
-import app.util.description_merger as description_merger
+
+from app.util import description_merger
 
 
 @pytest.mark.parametrize(

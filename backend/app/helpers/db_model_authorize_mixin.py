@@ -1,9 +1,10 @@
 from flask_jwt_extended import current_user
-from app.errors import UnauthorizedRequest, ForbiddenRequest
+
 import app
+from app.errors import ForbiddenRequest, UnauthorizedRequest
 
 
-class DbModelAuthorizeMixin(object):
+class DbModelAuthorizeMixin:
     def isAuthorized(
         self, requires_admin=False, household_id: int | None = None
     ) -> bool:

@@ -1,20 +1,23 @@
 from datetime import timedelta
 from typing import TYPE_CHECKING, cast
-from app.jobs.recipe_suggestions import computeRecipeSuggestions
-from app.config import app, scheduler, celery_app
+
 from celery.schedules import crontab
+
+from app.config import app, celery_app, scheduler
+from app.jobs.recipe_suggestions import computeRecipeSuggestions
 from app.models import (
-    Token,
-    Household,
-    Shoppinglist,
-    Recipe,
     ChallengePasswordReset,
+    Household,
     OIDCRequest,
+    Recipe,
+    Shoppinglist,
+    Token,
 )
 from app.service.delete_unused import deleteEmptyHouseholds, deleteUnusedFiles
+
+from .cluster_shoppings import clusterShoppings
 from .item_ordering import findItemOrdering
 from .item_suggestions import findItemSuggestions
-from .cluster_shoppings import clusterShoppings
 
 if TYPE_CHECKING:
     from celery.utils.dispatch import Signal

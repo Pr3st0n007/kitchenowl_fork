@@ -1,22 +1,23 @@
 import gevent
-from sqlalchemy import desc
-from app.errors import NotFoundRequest, UnauthorizedRequest
-from app.helpers.server_admin_required import server_admin_required
-from app.helpers import validate_args
-from flask import jsonify, Blueprint
+from flask import Blueprint, jsonify
 from flask_jwt_extended import current_user, jwt_required
-from app.models import User, ChallengeMailVerify, ChallengePasswordReset
+from sqlalchemy import desc
+
+from app.errors import NotFoundRequest, UnauthorizedRequest
+from app.helpers import validate_args
+from app.helpers.server_admin_required import server_admin_required
+from app.models import ChallengeMailVerify, ChallengePasswordReset, User
 from app.service import mail
 from app.service.file_has_access_or_download import file_has_access_or_download
-from .schemas import (
-    CreateUser,
-    ResetPassword,
-    UpdateUser,
-    SearchByNameRequest,
-    ConfirmMail,
-    ForgotPassword,
-)
 
+from .schemas import (
+    ConfirmMail,
+    CreateUser,
+    ForgotPassword,
+    ResetPassword,
+    SearchByNameRequest,
+    UpdateUser,
+)
 
 user = Blueprint("user", __name__)
 

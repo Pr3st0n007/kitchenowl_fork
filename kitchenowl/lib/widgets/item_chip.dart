@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:kitchenowl/item_icons.dart';
 import 'package:kitchenowl/models/item.dart';
+import 'package:kitchenowl/widgets/image_provider.dart';
 
 class ItemChip extends StatelessWidget {
   final Item item;
@@ -16,13 +17,23 @@ class ItemChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    IconData? icon = ItemIcons.get(item);
+    Widget? avatarWidget;
+    if (item.icon != null && item.icon!.contains('.')) {
+      avatarWidget = CircleAvatar(
+        backgroundColor: Colors.transparent,
+        backgroundImage: getImageProvider(context, item.icon!, maxWidth: 64),
+      );
+    } else {
+      IconData? icon = ItemIcons.get(item);
+      avatarWidget = icon != null ? Icon(icon) : null;
+    }
+
     return Chip(
-      avatar: icon != null ? Icon(icon) : null,
+      avatar: avatarWidget,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       padding: EdgeInsets.zero,
       labelPadding:
-          icon != null ? const EdgeInsets.only(left: 1, right: 4) : null,
+          avatarWidget != null ? const EdgeInsets.only(left: 1, right: 4) : null,
       label: Text(item.name +
           (description != null
               ? description!.isNotEmpty

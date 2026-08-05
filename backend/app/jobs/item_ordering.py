@@ -1,6 +1,7 @@
+import copy
+
 from app import app, db
 from app.models import Item
-import copy
 
 
 def findItemOrdering(shopping_instances):

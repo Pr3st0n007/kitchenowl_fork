@@ -283,6 +283,8 @@
   "agentInputHint": "Frage nach Rezepten, Zutaten oder Essensideen...",
   "agentMessageActions": "Nachrichtenaktionen",
   "agentModel": "Modell",
+  "agentIconGenerationModel": "Modell für Icon-Generierung",
+  "agentIconGenerationPrompt": "Prompt für Icon-Generierung",
   "agentNoChats": "Noch keine Chats",
   "agentNoChatsForFilter": "Keine Chats entsprechen diesem Filter",
   "agentNotConfigured": "Richte den Rezeptassistenten ein, um einen Chat zu starten.",

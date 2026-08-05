@@ -1,9 +1,11 @@
-from sqlalchemy import desc
-from app.helpers import validate_args, server_admin_required
-from flask import jsonify, Blueprint
-from app.errors import InvalidUsage, NotFoundRequest
+from flask import Blueprint, jsonify
 from flask_jwt_extended import current_user, jwt_required
+from sqlalchemy import desc
+
+from app.errors import InvalidUsage, NotFoundRequest
+from app.helpers import server_admin_required, validate_args
 from app.models import Report
+
 from .schemas import AddReport
 
 reportBlueprint = Blueprint("report", __name__)

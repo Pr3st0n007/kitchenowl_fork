@@ -31,6 +31,10 @@ class UpdateLLMConfig(Schema):
     brave_search_api_key = fields.String(allow_none=True)
     system_prompt = fields.String(allow_none=True)
     initial_greeting = fields.String(allow_none=True)
+    icon_generation_prompt = fields.String(allow_none=True)
+    icon_generation_model = fields.String(
+        allow_none=True, validate=validate.Length(max=128)
+    )
     enabled = fields.Boolean()
     max_tokens = fields.Integer(allow_none=True, validate=validate.Range(min=1))
     temperature = fields.Float(allow_none=True, validate=validate.Range(min=0, max=2))

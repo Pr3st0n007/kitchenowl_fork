@@ -5,11 +5,10 @@ Revises: e209fcb83993
 Create Date: 2022-04-18 15:12:24.971186
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 from app.config import DB_URL
-
 
 # revision identifiers, used by Alembic.
 revision = '11c15698c8bf'

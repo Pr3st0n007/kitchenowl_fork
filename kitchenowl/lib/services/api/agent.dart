@@ -15,6 +15,18 @@ class AgentTestResult {
   const AgentTestResult({required this.ok, this.reply, this.error});
 }
 
+class GeneratedIconResult {
+  final String filename;
+  final String subject;
+  final String iconName;
+
+  const GeneratedIconResult({
+    required this.filename,
+    required this.subject,
+    required this.iconName,
+  });
+}
+
 class AgentMessageResponse {
   final List<AgentMessage> messages;
   final AgentChat chat;
@@ -71,6 +83,44 @@ extension AgentApi on ApiService {
 
   // -------------------------------------------------------------- config
 
+  Future<GeneratedIconResult?> generateIcon(
+    Household household,
+    String itemName,
+  ) async {
+    final res = await post(
+      '${_agentBase(household)}/config/generate-icon',
+      jsonEncode({'name': itemName}),
+      timeout: const Duration(minutes: 2),
+    );
+    if (res.statusCode != 200) return null;
+    final body = Map<String, dynamic>.from(jsonDecode(res.body));
+    final filename = body['filename'] as String?;
+    if (filename == null || filename.isEmpty) return null;
+
+    final subject = (body['subject'] as String?)?.trim();
+    final iconName = (body['icon_name'] as String?)?.trim();
+
+    return GeneratedIconResult(
+      filename: filename,
+      subject: (subject == null || subject.isEmpty) ? itemName : subject,
+      iconName: (iconName == null || iconName.isEmpty)
+          ? _defaultIconName(itemName)
+          : iconName,
+    );
+  }
+
+  String _defaultIconName(String itemName) {
+    final cleaned = itemName
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s_-]'), ' ')
+        .trim();
+    if (cleaned.isEmpty) return 'generated';
+    return cleaned.split(RegExp(r'[\s_-]+')).firstWhere(
+          (part) => part.isNotEmpty,
+          orElse: () => 'generated',
+        );
+  }
+
   Future<LLMConfig?> getAgentConfig(Household household) async {
     final res = await get('${_agentBase(household)}/config');
     if (res.statusCode != 200) return null;
@@ -86,6 +136,8 @@ extension AgentApi on ApiService {
     String? braveSearchApiKey,
     String? systemPrompt,
     String? initialGreeting,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
     bool? enabled,
     int? maxTokens,
     double? temperature,
@@ -100,6 +152,12 @@ extension AgentApi on ApiService {
     }
     if (systemPrompt != null) body['system_prompt'] = systemPrompt;
     if (initialGreeting != null) body['initial_greeting'] = initialGreeting;
+    if (iconGenerationPrompt != null) {
+      body['icon_generation_prompt'] = iconGenerationPrompt;
+    }
+    if (iconGenerationModel != null) {
+      body['icon_generation_model'] = iconGenerationModel;
+    }
     if (enabled != null) body['enabled'] = enabled;
     if (maxTokens != null) body['max_tokens'] = maxTokens;
     if (temperature != null) body['temperature'] = temperature;
@@ -109,16 +167,38 @@ extension AgentApi on ApiService {
     return LLMConfig.fromJson(jsonDecode(res.body));
   }
 
-  Future<AgentTestResult> testAgentConfig(Household household) async {
-    final res = await post('${_agentBase(household)}/config/test', '');
+  Future<AgentTestResult> testAgentConfig(
+    Household household, {
+    LLMProvider? provider,
+    String? baseUrl,
+    String? model,
+    String? apiKey,
+    String? iconGenerationPrompt,
+    String? iconGenerationModel,
+  }) async {
+    final requestBody = <String, dynamic>{};
+    if (provider != null) requestBody['provider'] = provider.value;
+    if (baseUrl != null) requestBody['base_url'] = baseUrl;
+    if (model != null) requestBody['model'] = model;
+    if (apiKey != null) requestBody['api_key'] = apiKey;
+    if (iconGenerationPrompt != null) {
+      requestBody['icon_generation_prompt'] = iconGenerationPrompt;
+    }
+    if (iconGenerationModel != null) {
+      requestBody['icon_generation_model'] = iconGenerationModel;
+    }
+    final res = await post(
+      '${_agentBase(household)}/config/test',
+      jsonEncode(requestBody),
+    );
     if (res.statusCode != 200) {
       return AgentTestResult(ok: false, error: 'HTTP ${res.statusCode}');
     }
-    final body = Map<String, dynamic>.from(jsonDecode(res.body));
+    final responseBody = Map<String, dynamic>.from(jsonDecode(res.body));
     return AgentTestResult(
-      ok: body['ok'] == true,
-      reply: body['reply'] as String?,
-      error: body['error'] as String?,
+      ok: responseBody['ok'] == true,
+      reply: responseBody['reply'] as String?,
+      error: responseBody['error'] as String?,
     );
   }
 

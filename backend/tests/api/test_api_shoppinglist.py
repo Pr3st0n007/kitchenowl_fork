@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_get_shopping_lists(user_client_with_household, household_id):

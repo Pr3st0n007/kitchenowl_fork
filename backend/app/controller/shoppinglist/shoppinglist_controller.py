@@ -1,32 +1,33 @@
-from flask import jsonify, Blueprint
+from datetime import UTC, datetime, timedelta
+
+from flask import Blueprint, jsonify
 from flask_jwt_extended import current_user, jwt_required
-from app import db
+
+from app import db, socketio
+from app.errors import InvalidUsage, NotFoundRequest
+from app.helpers import authorize_household, validate_args
 from app.models import (
+    Association,
+    History,
     Item,
     Shoppinglist,
-    History,
-    Status,
-    Association,
     ShoppinglistItems,
+    Status,
 )
-from app.helpers import validate_args, authorize_household
+from app.util import description_merger
+
 from .schemas import (
+    AddItemByName,
+    AddRecipeItems,
+    CreateList,
+    GetItems,
+    GetRecentItems,
     GetShoppingLists,
     RemoveItem,
-    UpdateDescription,
-    AddItemByName,
-    CreateList,
-    AddRecipeItems,
-    GetItems,
-    UpdateList,
-    GetRecentItems,
     RemoveItems,
+    UpdateDescription,
+    UpdateList,
 )
-from app.errors import NotFoundRequest, InvalidUsage
-from datetime import datetime, timedelta, timezone
-import app.util.description_merger as description_merger
-from app import socketio
-
 
 shoppinglist = Blueprint("shoppinglist", __name__)
 shoppinglistHousehold = Blueprint("shoppinglist", __name__)
@@ -385,7 +386,7 @@ def removeShoppinglistItemFunc(
 
     removed_at_datetime = None
     if removed_at:
-        removed_at_datetime = datetime.fromtimestamp(removed_at / 1000, timezone.utc)
+        removed_at_datetime = datetime.fromtimestamp(removed_at / 1000, UTC)
 
     History.create_dropped(shoppinglist, item, description, removed_at_datetime)
     return con

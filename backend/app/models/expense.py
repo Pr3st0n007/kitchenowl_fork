@@ -1,13 +1,15 @@
-from datetime import datetime, timezone
-from typing import Any, Optional, Self, List, TYPE_CHECKING, cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, ExpenseCategory, User, File
     from app.helpers.db_model_base import DbModelBase
+    from app.models import ExpenseCategory, File, Household, User
 
     Model = DbModelBase
 
@@ -20,7 +22,7 @@ class Expense(Model, DbModelAuthorizeMixin):
     amount: Mapped[float] = db.Column(db.Float())
     description: Mapped[str] = db.Column(db.String)
     date: Mapped[datetime] = db.Column(
-        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        db.DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
     category_id: Mapped[int | None] = db.Column(
         db.Integer, db.ForeignKey("expense_category.id")
@@ -32,34 +34,34 @@ class Expense(Model, DbModelAuthorizeMixin):
     )
     exclude_from_statistics = db.Column(db.Boolean, default=False, nullable=False)
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    category: Mapped[Optional["ExpenseCategory"]] = cast(
+    category: Mapped[ExpenseCategory | None] = cast(
         Mapped["ExpenseCategory"],
         db.relationship(
             "ExpenseCategory",
         ),
     )
-    paid_by: Mapped["User"] = cast(
+    paid_by: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
         ),
     )
-    paid_for: Mapped[List["ExpensePaidFor"]] = cast(
-        Mapped[List["ExpensePaidFor"]],
+    paid_for: Mapped[list["ExpensePaidFor"]] = cast(
+        Mapped[list["ExpensePaidFor"]],
         db.relationship(
             "ExpensePaidFor",
             back_populates="expense",
             cascade="all, delete-orphan",
         ),
     )
-    photo_file: Mapped["File"] = cast(
+    photo_file: Mapped[File] = cast(
         Mapped["File"],
         db.relationship(
             "File",
@@ -128,14 +130,14 @@ class ExpensePaidFor(Model):
     )
     factor: Mapped[int] = db.Column(db.Integer())
 
-    expense: Mapped["Expense"] = cast(
+    expense: Mapped[Expense] = cast(
         Mapped["Expense"],
         db.relationship(
             "Expense",
             back_populates="paid_for",
         ),
     )
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -145,9 +147,9 @@ class ExpensePaidFor(Model):
 
     def obj_to_user_dict(self) -> dict[str, Any]:
         res = self.user.obj_to_dict()
-        res["factor"] = getattr(self, "factor")
-        res["created_at"] = getattr(self, "created_at")
-        res["updated_at"] = getattr(self, "updated_at")
+        res["factor"] = self.factor
+        res["created_at"] = self.created_at
+        res["updated_at"] = self.updated_at
         return res
 
     @classmethod

@@ -1,15 +1,18 @@
 from __future__ import annotations
+
 import hashlib
-from typing import Self, TYPE_CHECKING, cast
 import uuid
+from typing import TYPE_CHECKING, Self, cast
+
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.models.user import User
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import User
     from app.helpers.db_model_base import DbModelBase
+    from app.models import User
 
     Model = DbModelBase
 
@@ -20,7 +23,7 @@ class ChallengeMailVerify(Model):
         db.Integer, db.ForeignKey("user.id"), nullable=False
     )
 
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",

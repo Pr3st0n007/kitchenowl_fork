@@ -1,7 +1,8 @@
-from typing import Self, cast
-from lark import Lark, Transformer, Tree, Token
-from lark.visitors import Interpreter
 import re
+from typing import Self, cast
+
+from lark import Lark, Token, Transformer, Tree
+from lark.visitors import Interpreter
 
 grammar = r"""
 start: ","* item (","+ item)*

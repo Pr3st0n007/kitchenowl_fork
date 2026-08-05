@@ -7,7 +7,6 @@ Revises: f6a2b91c4d07
 import sqlalchemy as sa
 from alembic import op
 
-
 revision = "1a7d9e3c5b20"
 down_revision = "f6a2b91c4d07"
 branch_labels = None

@@ -1,8 +1,8 @@
-from typing import Tuple
-from lark import Lark, Transformer, Tree, Token
+import re
+
+from lark import Lark, Token, Transformer, Tree
 from lark.exceptions import LarkError
 from lark.visitors import Interpreter
-import re
 
 grammar = r"""
 start: (NUMBER unit?)? NAME? (NUMBER unit?)?
@@ -67,7 +67,7 @@ parser = Lark(grammar)
 transformer = T()
 
 
-def split(query: str) -> Tuple[str, str]:
+def split(query: str) -> tuple[str, str]:
     try:
         query = clean(query)
         itemTree = transformer.transform(parser.parse(query))

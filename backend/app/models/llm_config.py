@@ -81,6 +81,8 @@ class LLMConfig(Model):
     brave_search_api_key_encrypted: Mapped[str | None] = db.Column(db.String())
     system_prompt: Mapped[str | None] = db.Column(db.Text())
     initial_greeting: Mapped[str | None] = db.Column(db.Text())
+    icon_generation_model: Mapped[str | None] = db.Column(db.String(128))
+    icon_generation_prompt: Mapped[str | None] = db.Column(db.Text())
     # Legacy column kept so existing rows still load; the suggestion
     # guideline feature was removed in favour of per-chat recipe cards and
     # is no longer surfaced via the API or used at runtime.
@@ -90,7 +92,7 @@ class LLMConfig(Model):
     max_tokens: Mapped[int | None] = db.Column(db.Integer)
     temperature: Mapped[float | None] = db.Column(db.Float)
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship("Household", uselist=False),
     )
@@ -120,7 +122,7 @@ class LLMConfig(Model):
     def effective_base_url(self) -> str | None:
         return (self.base_url or "").strip() or self.default_base_url()
 
-    def effective_initial_greeting(self, persona: "AgentPersona | None" = None) -> str:
+    def effective_initial_greeting(self, persona: AgentPersona | None = None) -> str:
         """Return the configured greeting or the default.
 
         If ``persona`` is given and overrides the greeting, it wins over the

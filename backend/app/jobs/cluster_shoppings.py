@@ -1,9 +1,10 @@
+import time
+
+import numpy as np
+from dbscan1d.core import DBSCAN1D
+
 from app import app
 from app.models import History
-
-import time
-from dbscan1d.core import DBSCAN1D
-import numpy as np
 
 
 def clusterShoppings(shoppinglist_id: int) -> list | None:

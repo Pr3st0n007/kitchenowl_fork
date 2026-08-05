@@ -8,7 +8,7 @@ import json
 import os
 from unittest.mock import patch
 
-from app.service.llm.provider import LLMResponse
+from app.service.llm.provider import LLMError, LLMResponse
 
 
 def _config_path(household_id: int) -> str:
@@ -82,6 +82,171 @@ def test_clear_brave_search_api_key_with_empty_string(
     )
     assert res.status_code == 200
     assert res.get_json()["brave_search_api_key_set"] is False
+
+
+def test_agent_config_test_uses_provided_values_without_saving(
+    user_client_with_household, household_id
+):
+    # Ensure per-household config row exists, but do not save provider/model/key.
+    res = user_client_with_household.get(_config_path(household_id))
+    assert res.status_code == 200
+
+    captured = {}
+
+    def fake_init(self, config):
+        self.config = config
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        captured["provider"] = self.config.provider.value
+        captured["model"] = self.config.model
+        captured["api_key"] = self.config.get_api_key()
+        return LLMResponse(content="ok", tool_calls=[])
+
+    def fake_generate_image(self, prompt):
+        captured["icon_generation_model"] = self.config.icon_generation_model
+        captured["image_prompt"] = prompt
+        return "https://example.test/icon.png"
+
+    with (
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.__init__",
+            new=fake_init,
+        ),
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
+    ):
+        res = user_client_with_household.post(
+            f"{_config_path(household_id)}/test",
+            json={
+                "provider": "gemini",
+                "model": "gemini-flash-latest",
+                "api_key": "unsaved-test-key",
+                "icon_generation_model": "gemini-2.5-flash-image",
+                "icon_generation_prompt": "Draw {name} in flat style",
+            },
+        )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+    assert res.get_json()["ok"] is True
+    assert captured["provider"] == "gemini"
+    assert captured["model"] == "gemini-flash-latest"
+    assert captured["api_key"] == "unsaved-test-key"
+    assert captured["icon_generation_model"] == "gemini-2.5-flash-image"
+    assert "test ingredient" in captured["image_prompt"]
+
+
+def test_agent_config_test_fails_when_image_generation_check_fails(
+    user_client_with_household, household_id
+):
+    user_client_with_household.put(
+        _config_path(household_id),
+        json={
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "api_key": "sk-test",
+            "enabled": True,
+        },
+    )
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        return LLMResponse(content="ok", tool_calls=[])
+
+    def fake_generate_image(self, prompt):
+        raise LLMError("Image generation did not return any images")
+
+    with (
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
+    ):
+        res = user_client_with_household.post(f"{_config_path(household_id)}/test")
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["ok"] is False
+    assert "did not return any images" in (body.get("error") or "")
+
+
+def test_generate_icon_accepts_data_url_image_response(
+    user_client_with_household, household_id
+):
+    user_client_with_household.put(
+        _config_path(household_id),
+        json={
+            "provider": "gemini",
+            "model": "gemini-flash-latest",
+            "api_key": "gemini-test-key",
+            "icon_generation_model": "gemini-2.5-flash-image",
+            "enabled": True,
+        },
+    )
+
+    png_data_url = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMB/ax7vF0AAAAASUVORK5CYII="
+    )
+
+    def fake_generate_image(self, prompt):
+        return png_data_url
+
+    with patch(
+        "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+        new=fake_generate_image,
+    ):
+        res = user_client_with_household.post(
+            f"{_config_path(household_id)}/generate-icon",
+            json={"name": "Tomato"},
+        )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+    body = res.get_json()
+    assert body["filename"].endswith(".png")
+    assert body["icon_name"] == "tomato"
+
+
+def test_agent_config_test_replaces_subject_placeholder_in_image_prompt(
+    user_client_with_household, household_id
+):
+    user_client_with_household.put(
+        _config_path(household_id),
+        json={
+            "provider": "gemini",
+            "model": "gemini-flash-latest",
+            "api_key": "gemini-test-key",
+            "enabled": True,
+        },
+    )
+
+    captured: dict[str, str] = {}
+
+    def fake_chat(self, messages, tools=None, temperature=None):
+        return LLMResponse(content="ok", tool_calls=[])
+
+    def fake_generate_image(self, prompt):
+        captured["prompt"] = prompt
+        return "https://example.test/icon.png"
+
+    with (
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
+    ):
+        res = user_client_with_household.post(
+            f"{_config_path(household_id)}/test",
+            json={"icon_generation_prompt": "Draw [SUBJECT] in flat style"},
+        )
+
+    assert res.status_code == 200, res.get_data(as_text=True)
+    assert res.get_json()["ok"] is True
+    assert captured["prompt"] == "Draw test ingredient in flat style"
 
 
 def _enable_agent_feature(client, household_id):
@@ -320,10 +485,11 @@ def test_chat_message_with_pdf_attachment_extracts_text(
         captured["messages"] = messages
         return LLMResponse(content="ok", tool_calls=[])
 
-    with patch(
-        "app.service.llm.agent._extract_pdf_text", return_value="2 Eier\n1 TL Salz"
-    ), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
+    with (
+        patch(
+            "app.service.llm.agent._extract_pdf_text", return_value="2 Eier\n1 TL Salz"
+        ),
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
     ):
         res = user_client_with_household.post(
             f"{_chats_path(household_id)}/{chat_id}/messages",
@@ -562,6 +728,26 @@ def test_test_endpoint_reports_provider_failure(
     assert "invalid api key" in body["error"]
 
 
+def test_test_endpoint_reports_provider_setup_failure(
+    user_client_with_household, household_id
+):
+    from app.service.llm.provider import LLMError
+
+    _configure_ready_agent(user_client_with_household, household_id)
+
+    def boom_init(self, config):
+        raise LLMError("LLM endpoint host 'localhost' is not in LLM_ALLOWED_HOSTS")
+
+    with patch(
+        "app.service.llm.provider.OpenAICompatibleProvider.__init__", new=boom_init
+    ):
+        res = user_client_with_household.post(f"{_config_path(household_id)}/test")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["ok"] is False
+    assert "not in LLM_ALLOWED_HOSTS" in (body.get("error") or "")
+
+
 def test_test_endpoint_returns_reply_on_success(
     user_client_with_household, household_id
 ):
@@ -570,7 +756,16 @@ def test_test_endpoint_returns_reply_on_success(
     def fake(self, messages, tools=None, temperature=None):
         return LLMResponse(content="ok", tool_calls=[])
 
-    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake):
+    def fake_generate_image(self, prompt):
+        return "https://example.test/icon.png"
+
+    with (
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
+    ):
         res = user_client_with_household.post(f"{_config_path(household_id)}/test")
     assert res.status_code == 200
     body = res.get_json()

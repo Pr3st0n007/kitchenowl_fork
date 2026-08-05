@@ -1,11 +1,13 @@
-from typing import Self, TYPE_CHECKING, cast
-from app import db
+from typing import TYPE_CHECKING, Self, cast
+
 from sqlalchemy.orm import Mapped
+
+from app import db
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Item
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Item
 
     Model = DbModelBase
 
@@ -21,7 +23,7 @@ class Association(Model):
     confidence: Mapped[float] = db.Column(db.Float)
     lift: Mapped[float] = db.Column(db.Float)
 
-    antecedent: Mapped["Item"] = cast(
+    antecedent: Mapped[Item] = cast(
         Mapped["Item"],
         db.relationship(
             "Item",
@@ -30,7 +32,7 @@ class Association(Model):
             back_populates="antecedents",
         ),
     )
-    consequent: Mapped["Item"] = cast(
+    consequent: Mapped[Item] = cast(
         Mapped["Item"],
         db.relationship(
             "Item",

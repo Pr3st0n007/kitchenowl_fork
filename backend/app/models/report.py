@@ -1,12 +1,13 @@
 from typing import TYPE_CHECKING, Any, cast
 
-from app import db
 from sqlalchemy.orm import Mapped
+
+from app import db
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import User, Recipe
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Recipe, User
 
     Model = DbModelBase
 
@@ -27,7 +28,7 @@ class Report(Model):
         db.Integer, db.ForeignKey("recipe.id"), nullable=True
     )
 
-    created_by: Mapped["User"] = cast(
+    created_by: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -36,7 +37,7 @@ class Report(Model):
         ),
     )
 
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -44,7 +45,7 @@ class Report(Model):
             back_populates="reports",
         ),
     )
-    recipe: Mapped["Recipe"] = cast(
+    recipe: Mapped[Recipe] = cast(
         Mapped["Recipe"],
         db.relationship(
             "Recipe",

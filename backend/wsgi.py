@@ -1,13 +1,11 @@
-# ruff: noqa: E402
-
 import gevent.monkey
 
 gevent.monkey.patch_all()
-import argparse
-import os
+import argparse  # noqa: E402
+import os  # noqa: E402
 
-from app import app, socketio
-from app.config import UPLOAD_FOLDER
+from app import app, socketio  # noqa: E402
+from app.config import UPLOAD_FOLDER  # noqa: E402
 
 
 def parse_arguments():

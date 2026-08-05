@@ -1,17 +1,19 @@
 from __future__ import annotations
-from typing import Any, Optional, Self, List, TYPE_CHECKING, cast
+
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from sqlalchemy import func
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
 from app.models.category import Category
 from app.util import description_merger
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, RecipeItems, ShoppinglistItems
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Household, RecipeItems, ShoppinglistItems
 
     Model = DbModelBase
 
@@ -31,30 +33,30 @@ class Item(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("household.id"), nullable=False, index=True
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    category: Mapped[Optional["Category"]] = cast(
+    category: Mapped[Category | None] = cast(
         Mapped["Category"],
         db.relationship(
             "Category",
         ),
     )
 
-    recipes: Mapped[List["RecipeItems"]] = cast(
-        Mapped[List["RecipeItems"]],
+    recipes: Mapped[list[RecipeItems]] = cast(
+        Mapped[list["RecipeItems"]],
         db.relationship(
             "RecipeItems",
             back_populates="item",
             cascade="all, delete-orphan",
         ),
     )
-    shoppinglists: Mapped[List["ShoppinglistItems"]] = cast(
-        Mapped[List["ShoppinglistItems"]],
+    shoppinglists: Mapped[list[ShoppinglistItems]] = cast(
+        Mapped[list["ShoppinglistItems"]],
         db.relationship(
             "ShoppinglistItems",
             back_populates="item",
@@ -113,9 +115,7 @@ class Item(Model, DbModelAuthorizeMixin):
         if other.household_id != self.household_id:
             return
 
-        from app.models import RecipeItems
-        from app.models import History
-        from app.models import ShoppinglistItems
+        from app.models import History, RecipeItems, ShoppinglistItems
 
         if not self.default_key and other.default_key:
             self.default_key = other.default_key
@@ -241,12 +241,12 @@ class Item(Model, DbModelAuthorizeMixin):
             return found
 
         # name is no regex
-        starts_with = "{0}%".format(name)
-        contains = "%{0}%".format(name)
-        one_error: List[str] = []
+        starts_with = f"{name}%"
+        contains = f"%{name}%"
+        one_error: list[str] = []
         for index in range(len(name)):
             name_one_error = name[:index] + "_" + name[index + 1 :]
-            one_error.append("%{0}%".format(name_one_error))
+            one_error.append(f"%{name_one_error}%")
 
         for looking_for in [starts_with, contains] + one_error:
             res = (

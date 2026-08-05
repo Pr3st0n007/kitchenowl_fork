@@ -111,7 +111,7 @@ class UndoOp:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "UndoOp":
+    def from_dict(cls, data: dict[str, Any]) -> UndoOp:
         return cls(
             tool=str(data.get("tool", "")),
             type=str(data.get("type", "")),
@@ -761,7 +761,7 @@ _RECIPE_SCALAR_FIELDS: tuple[str, ...] = (
 )
 
 
-def _recipe_snapshot(recipe: "Recipe") -> dict[str, Any]:
+def _recipe_snapshot(recipe: Recipe) -> dict[str, Any]:
     """Capture the subset of recipe fields we need to restore on undo."""
     snap: dict[str, Any] = {
         "id": recipe.id,
@@ -787,7 +787,7 @@ def _strip_recipe_dict(result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _restore_recipe_scalars(recipe: "Recipe", snapshot: dict[str, Any]) -> None:
+def _restore_recipe_scalars(recipe: Recipe, snapshot: dict[str, Any]) -> None:
     from app.models.recipe import RecipeVisibility
 
     for name in _RECIPE_SCALAR_FIELDS:
@@ -802,7 +802,7 @@ def _restore_recipe_scalars(recipe: "Recipe", snapshot: dict[str, Any]) -> None:
         setattr(recipe, name, value)
 
 
-def _recipe_unchanged(recipe: "Recipe", snapshot: dict[str, Any] | None) -> bool:
+def _recipe_unchanged(recipe: Recipe, snapshot: dict[str, Any] | None) -> bool:
     if not snapshot:
         return False
     snap = snapshot.get("recipe") if "recipe" in snapshot else snapshot
@@ -815,7 +815,7 @@ def _recipe_unchanged(recipe: "Recipe", snapshot: dict[str, Any] | None) -> bool
 
 
 def _matches_known_timestamp(
-    recipe: "Recipe", recipe_id: int | None, ctx: _UndoBatchContext
+    recipe: Recipe, recipe_id: int | None, ctx: _UndoBatchContext
 ) -> bool:
     """Return True if the recipe's current ``updated_at`` matches any value
     the chat captured for it across this rewind batch (covers timestamps

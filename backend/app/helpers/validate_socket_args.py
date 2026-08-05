@@ -1,6 +1,8 @@
-from marshmallow.exceptions import ValidationError
-from app.errors import InvalidUsage
 from functools import wraps
+
+from marshmallow.exceptions import ValidationError
+
+from app.errors import InvalidUsage
 
 
 def validate_socket_args(schema_cls):
@@ -13,7 +15,7 @@ def validate_socket_args(schema_cls):
             try:
                 arguments = schema_cls().load(args[0])
             except ValidationError as exc:
-                raise InvalidUsage("{}".format(exc))
+                raise InvalidUsage(f"{exc}")
 
             return func(arguments, **kwargs)
 

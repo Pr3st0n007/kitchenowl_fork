@@ -1,13 +1,15 @@
 from __future__ import annotations
-from datetime import datetime, timezone
-from typing import Any, Optional, Self, Tuple, List, TYPE_CHECKING, cast
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from flask_jwt_extended import create_access_token, create_refresh_token, get_jti
+from sqlalchemy.orm import Mapped
 
 from app import db
-from app.config import JWT_REFRESH_TOKEN_EXPIRES, JWT_ACCESS_TOKEN_EXPIRES
+from app.config import JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES
 from app.errors import UnauthorizedRequest, getClientIp
-from flask_jwt_extended import create_access_token, create_refresh_token, get_jti
 from app.models.user import User
-from sqlalchemy.orm import Mapped
 
 Model = db.Model
 if TYPE_CHECKING:
@@ -24,7 +26,7 @@ class Token(Model):
     type: Mapped[str] = db.Column(db.String(16), nullable=False)
     name: Mapped[str] = db.Column(db.String(), nullable=False)
     last_used_at: Mapped[datetime | None] = db.Column(db.DateTime)
-    refresh_token_id: Mapped[Optional[int]] = db.Column(
+    refresh_token_id: Mapped[int | None] = db.Column(
         db.Integer,
         db.ForeignKey("token.id"),
         nullable=True,
@@ -37,22 +39,22 @@ class Token(Model):
         index=True,
     )
 
-    created_tokens: Mapped[List["Token"]] = cast(
-        Mapped[List["Token"]],
+    created_tokens: Mapped[list[Token]] = cast(
+        Mapped[list["Token"]],
         db.relationship(
             "Token",
             back_populates="refresh_token",
             cascade="all, delete-orphan",
         ),
     )
-    refresh_token: Mapped["Token"] = cast(
+    refresh_token: Mapped[Token] = cast(
         Mapped["Token"],
         db.relationship(
             "Token",
             remote_side=[id],
         ),
     )
-    user: Mapped["User"] = cast(
+    user: Mapped[User] = cast(
         Mapped["User"],
         db.relationship(
             "User",
@@ -79,7 +81,7 @@ class Token(Model):
 
     @classmethod
     def delete_expired_refresh(cls):
-        filter_before = datetime.now(timezone.utc) - JWT_REFRESH_TOKEN_EXPIRES
+        filter_before = datetime.now(UTC) - JWT_REFRESH_TOKEN_EXPIRES
 
         # Delete expired regular refresh tokens with no children
         for token in (
@@ -102,7 +104,7 @@ class Token(Model):
 
     @classmethod
     def delete_expired_access(cls):
-        filter_before = datetime.now(timezone.utc) - JWT_ACCESS_TOKEN_EXPIRES
+        filter_before = datetime.now(UTC) - JWT_ACCESS_TOKEN_EXPIRES
         db.session.query(cls).filter(
             cls.created_at <= filter_before, cls.type == "access"
         ).delete()
@@ -144,7 +146,7 @@ class Token(Model):
     @classmethod
     def create_access_token(
         cls, user: User, refreshTokenModel: Self
-    ) -> Tuple[str, Self]:
+    ) -> tuple[str, Self]:
         accesssToken = create_access_token(identity=user)
         model = cls()
         model.jti = cast(str, get_jti(accesssToken))
@@ -158,14 +160,12 @@ class Token(Model):
     @classmethod
     def create_refresh_token(
         cls, user: User, device: str | None = None, oldRefreshToken: Self | None = None
-    ) -> Tuple[str, Self]:
+    ) -> tuple[str, Self]:
         assert device or oldRefreshToken
         if oldRefreshToken and oldRefreshToken.type != "refresh":
             oldRefreshToken.delete_token_familiy()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} reused the same refresh token, logging out user".format(
-                    getClientIp()
-                )
+                message=f"Unauthorized: IP {getClientIp()} reused the same refresh token, logging out user"
             )
 
         # Check if this refresh token has already been used to create another refresh token
@@ -178,7 +178,7 @@ class Token(Model):
                     .filter(
                         Token.refresh_token_id == newer_token.id,
                         Token.type == "access",
-                        Token.last_used_at != None,
+                        Token.last_used_at.is_not(None),
                     )
                     .count()
                     > 0
@@ -188,9 +188,7 @@ class Token(Model):
                     # The newer tokens have been used, this is a reuse attack
                     oldRefreshToken.delete_token_familiy()
                     raise UnauthorizedRequest(
-                        message="Unauthorized: IP {} reused the same refresh token, logging out user".format(
-                            getClientIp()
-                        )
+                        message=f"Unauthorized: IP {getClientIp()} reused the same refresh token, logging out user"
                     )
                 else:
                     # Only invalidate the unused parallel refresh token chain
@@ -213,7 +211,7 @@ class Token(Model):
         return refreshToken, model
 
     @classmethod
-    def create_longlived_token(cls, user: User, device: str) -> Tuple[str, Self]:
+    def create_longlived_token(cls, user: User, device: str) -> tuple[str, Self]:
         accesssToken = create_access_token(identity=user, expires_delta=False)
         model = cls()
         model.jti = cast(str, get_jti(accesssToken))

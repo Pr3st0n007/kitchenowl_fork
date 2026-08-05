@@ -1,5 +1,6 @@
-from sqlalchemy.types import String, TypeDecorator
 import json
+
+from sqlalchemy.types import String, TypeDecorator
 
 
 # Represents a Set in the DataBase (i.e. {e1, e2, e3, ...})

@@ -1,7 +1,9 @@
 import os
+
 from flask import Blueprint
-from app.config import app, api_spec
+
 import app.controller as api
+from app.config import api_spec, app
 
 # Register Endpoints
 apiv1 = Blueprint("api", __name__)

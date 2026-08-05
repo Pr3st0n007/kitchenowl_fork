@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:kitchenowl/item_icons.dart';
 import 'package:kitchenowl/kitchenowl.dart';
 import 'package:kitchenowl/models/item.dart';
+import 'package:kitchenowl/models/household.dart';
+import 'package:kitchenowl/services/api/api_service.dart';
 
 class IconSelectionPage extends StatefulWidget {
   final String? oldIcon;
   final String name;
+  final Household? household;
 
   const IconSelectionPage({
     super.key,
     this.oldIcon,
     required this.name,
+    this.household,
   });
 
   @override
@@ -20,11 +24,74 @@ class IconSelectionPage extends StatefulWidget {
 class _IconSelectionPageState extends State<IconSelectionPage> {
   TextEditingController searchController = TextEditingController();
   String filter = "";
+  bool _generating = false;
+
+  Future<void> _generateIcon() async {
+    if (widget.household == null) return;
+    setState(() => _generating = true);
+    final generated = await ApiService.getInstance().generateIcon(
+      widget.household!,
+      widget.name,
+    );
+    if (!mounted) return;
+    setState(() => _generating = false);
+    if (generated != null) {
+      final shouldUse = await _showGeneratedIconDialog(generated);
+      if (!mounted || shouldUse != true) return;
+      Navigator.of(context).pop(Nullable(generated.filename));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.error),
+        ),
+      );
+    }
+  }
 
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  Future<bool?> _showGeneratedIconDialog(GeneratedIconResult generated) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Generated Icon'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Subject: ${generated.subject}'),
+            const SizedBox(height: 12),
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image(
+                  image: getImageProvider(context, generated.filename),
+                  width: 96,
+                  height: 96,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('Icon name: ${generated.iconName}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Use icon'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -33,9 +100,26 @@ class _IconSelectionPageState extends State<IconSelectionPage> {
       appBar: AppBar(
         title: Text(widget.name),
         actions: [
+          if (widget.household != null)
+            _generating
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.auto_awesome),
+                    tooltip: "Generate with AI",
+                    onPressed: _generateIcon,
+                  ),
           if (widget.oldIcon != null)
             IconButton(
-              icon: Icon(Icons.not_interested_rounded),
+              icon: const Icon(Icons.not_interested_rounded),
               tooltip: AppLocalizations.of(context)!.remove,
               onPressed: () =>
                   Navigator.of(context).pop(const Nullable<String?>.empty()),

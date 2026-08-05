@@ -1,1 +1,1 @@
-from .onboarding_controller import onboarding
+from .onboarding_controller import onboarding as onboarding

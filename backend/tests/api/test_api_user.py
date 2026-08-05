@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_current_user_admin(admin_client, admin_username, admin_name):

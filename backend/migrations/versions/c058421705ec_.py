@@ -5,12 +5,13 @@ Revises: 6c669d9ec3bd
 Create Date: 2023-04-20 16:28:00.255353
 
 """
-from datetime import datetime, timezone
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy import orm, inspect
+from datetime import UTC, datetime
 from os import listdir
 from os.path import isfile, join
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy import inspect, orm
 
 from app.config import UPLOAD_FOLDER, db
 
@@ -25,8 +26,8 @@ depends_on = None
 class File(DeclarativeBase):
     __tablename__ = 'file'
     filename = sa.Column(sa.String, primary_key=True)
-    created_at = sa.Column(sa.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    updated_at = sa.Column(sa.DateTime, nullable=False, default=datetime.now(timezone.utc))
+    created_at = sa.Column(sa.DateTime, nullable=False, default=datetime.now(UTC))
+    updated_at = sa.Column(sa.DateTime, nullable=False, default=datetime.now(UTC))
     created_by = sa.Column(sa.Integer, sa.ForeignKey('user.id'), nullable=True)
 
 class Recipe(DeclarativeBase):
@@ -68,7 +69,7 @@ def upgrade():
 
         session.bulk_save_objects(files)
         session.commit()
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         session.rollback()
     except BaseException as e:
         session.rollback()

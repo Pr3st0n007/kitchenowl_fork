@@ -1,1 +1,1 @@
-from .auth_controller import auth
+from .auth_controller import auth as auth

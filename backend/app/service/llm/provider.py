@@ -5,9 +5,11 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
+import re
 import socket
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from app.models.llm_config import LLMConfig, LLMProviderType
@@ -17,17 +19,42 @@ _BUILTIN_PROVIDER_HOSTS = {
     LLMProviderType.OPENAI: {"api.openai.com"},
     LLMProviderType.GEMINI: {"generativelanguage.googleapis.com"},
 }
+_OPENAI_IMAGE_DEFAULT_MODEL = "dall-e-3"
+_GEMINI_IMAGE_FALLBACK_MODEL = "gemini/gemini-2.5-flash-image"
 
 
 class LLMError(Exception):
     """Raised when the configured LLM endpoint cannot be reached or refuses the request."""
 
 
+def _empty_tool_calls() -> list[dict[str, Any]]:
+    return []
+
+
 @dataclass
 class LLMResponse:
     content: str | None
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=_empty_tool_calls)
     raw: dict[str, Any] | None = None
+
+
+def _mapping_to_dict(value: Mapping[Any, Any]) -> dict[str, Any]:
+    return {str(k): v for k, v in value.items()}
+
+
+def _obj_get(
+    obj: object | None, key: str, default: object | None = None
+) -> object | None:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        data = cast(dict[str, Any], obj)
+        return data.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _as_str(value: object | None, default: str = "") -> str:
+    return value if isinstance(value, str) else default
 
 
 def _parse_allowed_hosts(env_value: str | None) -> set[str]:
@@ -83,6 +110,9 @@ class LLMProvider:
     ) -> LLMResponse:
         raise NotImplementedError
 
+    def generate_image(self, prompt: str) -> str:
+        raise NotImplementedError
+
 
 class OpenAICompatibleProvider(LLMProvider):
     """Provider that delegates to ``litellm.completion``.
@@ -119,10 +149,14 @@ class OpenAICompatibleProvider(LLMProvider):
             )
 
         try:
-            addresses = {
-                item[4][0]
-                for item in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
-            }
+            addresses: set[str] = set()
+            for item in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM):
+                sockaddr = item[4]
+                if not sockaddr:
+                    continue
+                host = sockaddr[0]
+                if isinstance(host, str):
+                    addresses.add(host)
         except socket.gaierror as exc:
             raise LLMError(
                 f"LLM endpoint host '{hostname}' cannot be resolved"
@@ -144,9 +178,13 @@ class OpenAICompatibleProvider(LLMProvider):
         try:
             # Imported lazily so test code can patch the module-level name and
             # so importing this module never triggers litellm's network probes.
-            from litellm import completion
+            import litellm
         except Exception as exc:  # pragma: no cover - import-time failure
             raise LLMError(f"litellm is not available: {exc}") from exc
+        litellm_any: Any = litellm
+        completion: Callable[..., object] = cast(
+            Callable[..., object], litellm_any.completion
+        )
 
         kwargs: dict[str, Any] = {
             "model": _model_id_for(self.config),
@@ -197,62 +235,231 @@ class OpenAICompatibleProvider(LLMProvider):
 
         return _normalize_response(response)
 
+    def generate_image(self, prompt: str) -> str:
+        try:
+            import litellm
+        except Exception as exc:
+            raise LLMError(f"litellm is not available: {exc}") from exc
+        litellm_any: Any = litellm
+        image_generation: Callable[..., object] = cast(
+            Callable[..., object], litellm_any.image_generation
+        )
 
-def _normalize_response(response: Any) -> LLMResponse:
+        configured_icon_model = (self.config.icon_generation_model or "").strip()
+        model = configured_icon_model or _default_image_model_for(self.config.provider)
+
+        if self.config.provider == LLMProviderType.GEMINI and "/" not in model:
+            model = f"gemini/{model}"
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "api_key": self.config.get_api_key(),
+        }
+
+        base_url = self.config.effective_base_url()
+        # Mirror chat behavior: native ``gemini/...`` image routes must not
+        # receive OpenAI-compatible ``api_base`` URLs (Google returns 404).
+        if base_url and not model.startswith("gemini/"):
+            kwargs["api_base"] = base_url
+
+        try:
+            response_obj: object = image_generation(**kwargs)
+            parsed = _extract_image_reference(response_obj)
+            if parsed:
+                return parsed
+
+            should_try_gemini_fallback = (
+                self.config.provider == LLMProviderType.GEMINI
+                and "image" not in configured_icon_model.lower()
+                and model != _GEMINI_IMAGE_FALLBACK_MODEL
+            )
+            if should_try_gemini_fallback:
+                fallback_kwargs = dict(kwargs)
+                fallback_kwargs["model"] = _GEMINI_IMAGE_FALLBACK_MODEL
+                _logger.info(
+                    "LLM image generation returned no image for model '%s'; retrying with '%s'",
+                    model,
+                    _GEMINI_IMAGE_FALLBACK_MODEL,
+                )
+                fallback_response_obj: object = image_generation(**fallback_kwargs)
+                fallback_parsed = _extract_image_reference(fallback_response_obj)
+                if fallback_parsed:
+                    return fallback_parsed
+
+            response_shape = _describe_image_response_shape(response_obj)
+            response_error = _extract_image_error_detail(response_obj)
+            raise LLMError(
+                "Image generation did not return any images"
+                + (f" ({response_error})" if response_error else "")
+                + (f" (response shape: {response_shape})" if response_shape else "")
+            )
+        except Exception as exc:
+            _logger.warning("LLM image generation failed: %s", exc, exc_info=True)
+            raise LLMError(_friendly_image_error_message(exc)) from exc
+
+
+def _default_image_model_for(provider: LLMProviderType) -> str:
+    if provider == LLMProviderType.GEMINI:
+        return _GEMINI_IMAGE_FALLBACK_MODEL
+    return _OPENAI_IMAGE_DEFAULT_MODEL
+
+
+def _extract_image_reference(response_obj: object) -> str | None:
+    data_obj = _obj_get(response_obj, "data")
+    data: list[object]
+    if isinstance(data_obj, Sequence) and not isinstance(
+        data_obj, (str, bytes, bytearray)
+    ):
+        data = list(cast(Sequence[object], data_obj))
+    else:
+        data = []
+    if not data:
+        return None
+
+    first = data[0]
+    image_url = _as_str(_obj_get(first, "url"), "")
+    if image_url:
+        return image_url
+    image_b64 = _as_str(_obj_get(first, "b64_json"), "")
+    if image_b64:
+        return f"data:image/png;base64,{image_b64}"
+    return None
+
+
+def _describe_image_response_shape(response_obj: object) -> str:
+    if isinstance(response_obj, Mapping):
+        keys = [str(k) for k in response_obj.keys()]
+    else:
+        keys = []
+        for attr in (
+            "data",
+            "error",
+            "choices",
+            "output",
+            "message",
+            "status",
+            "model",
+        ):
+            if hasattr(response_obj, attr):
+                keys.append(attr)
+    return ", ".join(keys[:8])
+
+
+def _extract_image_error_detail(response_obj: object) -> str:
+    error_obj = _obj_get(response_obj, "error")
+    if error_obj is not None:
+        message = _as_str(_obj_get(error_obj, "message"), "")
+        if message:
+            return message
+        if isinstance(error_obj, Mapping):
+            compact = str(dict(error_obj))
+            return compact[:200]
+
+    message = _as_str(_obj_get(response_obj, "message"), "")
+    if message:
+        return message
+
+    status = _as_str(_obj_get(response_obj, "status"), "")
+    if status:
+        return f"status={status}"
+
+    return ""
+
+
+def _friendly_image_error_message(exc: Exception) -> str:
+    detail = str(exc)
+    lower = detail.lower()
+    is_rate_limited = (
+        "ratelimiterror" in lower
+        or "resource_exhausted" in lower
+        or "quota exceeded" in lower
+        or "429" in lower
+    )
+    if not is_rate_limited:
+        return detail
+
+    retry_hint = None
+    retry_in_match = re.search(r"please retry in\s+([0-9.]+)s", detail, re.IGNORECASE)
+    if retry_in_match:
+        retry_hint = retry_in_match.group(1)
+    else:
+        retry_delay_match = re.search(
+            r'"retryDelay"\s*:\s*"([^"]+)"', detail, re.IGNORECASE
+        )
+        if retry_delay_match:
+            retry_hint = retry_delay_match.group(1)
+
+    message = "Image generation is rate limited by the provider quota."
+    if retry_hint:
+        message += f" Retry after about {retry_hint}s."
+    message += " Check Gemini API quota and billing settings."
+    return message
+
+
+def _normalize_response(response: object) -> LLMResponse:
     """Normalise a litellm ``ModelResponse`` into our :class:`LLMResponse`.
 
     litellm exposes either an OpenAI-shaped object with attribute access or
     a plain dict, depending on the provider, so handle both.
     """
 
-    def _g(obj: Any, key: str, default: Any = None) -> Any:
-        if obj is None:
-            return default
-        if isinstance(obj, dict):
-            return obj.get(key, default)
-        return getattr(obj, key, default)
-
-    choices = _g(response, "choices") or []
+    choices_obj = _obj_get(response, "choices", [])
+    choices: list[object]
+    if isinstance(choices_obj, Sequence) and not isinstance(
+        choices_obj, (str, bytes, bytearray)
+    ):
+        choices = list(cast(Sequence[object], choices_obj))
+    else:
+        choices = []
     if not choices:
         return LLMResponse(content=None, raw=_safe_dict(response))
-    message = _g(choices[0], "message") or {}
-    content = _g(message, "content")
-    raw_tool_calls = _g(message, "tool_calls") or []
+    message_obj = _obj_get(choices[0], "message", {})
+    content_obj = _obj_get(message_obj, "content")
+    raw_tool_calls_obj = _obj_get(message_obj, "tool_calls", [])
+    raw_tool_calls: list[object]
+    if isinstance(raw_tool_calls_obj, Sequence) and not isinstance(
+        raw_tool_calls_obj, (str, bytes, bytearray)
+    ):
+        raw_tool_calls = list(cast(Sequence[object], raw_tool_calls_obj))
+    else:
+        raw_tool_calls = []
 
     tool_calls: list[dict[str, Any]] = []
-    for tc in raw_tool_calls:
-        function = _g(tc, "function") or {}
+    for tc_obj in raw_tool_calls:
+        function_obj = _obj_get(tc_obj, "function", {})
         tool_calls.append(
             {
-                "id": _g(tc, "id") or "",
-                "type": _g(tc, "type") or "function",
+                "id": _as_str(_obj_get(tc_obj, "id")),
+                "type": _as_str(_obj_get(tc_obj, "type"), "function"),
                 "function": {
-                    "name": _g(function, "name") or "",
-                    "arguments": _g(function, "arguments") or "",
+                    "name": _as_str(_obj_get(function_obj, "name")),
+                    "arguments": _as_str(_obj_get(function_obj, "arguments")),
                 },
             }
         )
 
     return LLMResponse(
-        content=content if isinstance(content, str) else None,
+        content=content_obj if isinstance(content_obj, str) else None,
         tool_calls=tool_calls,
         raw=_safe_dict(response),
     )
 
 
-def _safe_dict(obj: Any) -> dict[str, Any] | None:
+def _safe_dict(obj: object | None) -> dict[str, Any] | None:
     if obj is None:
         return None
-    if isinstance(obj, dict):
-        return obj
+    if isinstance(obj, Mapping):
+        return _mapping_to_dict(cast(Mapping[Any, Any], obj))
     for attr in ("model_dump", "dict", "to_dict"):
         method = getattr(obj, attr, None)
         if callable(method):
             try:
                 result = method()
-                if isinstance(result, dict):
-                    return result
-            except Exception:
+                if isinstance(result, Mapping):
+                    return _mapping_to_dict(cast(Mapping[Any, Any], result))
+            except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+                _logger.debug("Failed serializing LLM response via %s: %s", attr, exc)
                 continue
     return None
 

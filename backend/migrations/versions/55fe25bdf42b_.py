@@ -5,8 +5,8 @@ Revises: a9824159e4e5
 Create Date: 2022-12-08 17:41:24.521923
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 import app.helpers.db_set_type
 

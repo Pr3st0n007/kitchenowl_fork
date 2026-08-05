@@ -1,4 +1,4 @@
-from marshmallow import EXCLUDE, fields, Schema
+from marshmallow import EXCLUDE, Schema, fields
 
 
 class ImportSchema(Schema):

@@ -1,6 +1,8 @@
 from typing import TYPE_CHECKING, Self
-from app import db
+
 from sqlalchemy.orm import Mapped
+
+from app import db
 
 Model = db.Model
 if TYPE_CHECKING:

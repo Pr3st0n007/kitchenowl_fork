@@ -1,15 +1,18 @@
 from __future__ import annotations
-from typing import Any, Self, TYPE_CHECKING, cast
+
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any, Self, cast
+
+from sqlalchemy import func
+from sqlalchemy.orm import Mapped
+
 from app import db
 from app.helpers import DbModelAuthorizeMixin
-from sqlalchemy.orm import Mapped
-from sqlalchemy import func
-from datetime import datetime, date
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, Recipe
     from app.helpers.db_model_base import DbModelBase
+    from app.models import Household, Recipe
 
     Model = DbModelBase
 
@@ -26,14 +29,14 @@ class Planner(Model, DbModelAuthorizeMixin):
         db.Integer, db.ForeignKey("household.id"), nullable=False, index=True
     )
 
-    household: Mapped["Household"] = cast(
+    household: Mapped[Household] = cast(
         Mapped["Household"],
         db.relationship(
             "Household",
             uselist=False,
         ),
     )
-    recipe: Mapped["Recipe"] = cast(
+    recipe: Mapped[Recipe] = cast(
         Mapped["Recipe"],
         db.relationship(
             "Recipe",

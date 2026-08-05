@@ -1,1 +1,1 @@
-from .user_controller import user
+from .user_controller import user as user

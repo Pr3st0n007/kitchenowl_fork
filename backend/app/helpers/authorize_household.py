@@ -1,7 +1,9 @@
-from functools import wraps
 from enum import Enum
+from functools import wraps
+
 from flask_jwt_extended import current_user
-from app.errors import UnauthorizedRequest, ForbiddenRequest
+
+from app.errors import ForbiddenRequest, UnauthorizedRequest
 
 
 class RequiredRights(Enum):

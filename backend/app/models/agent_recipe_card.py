@@ -60,17 +60,17 @@ class AgentRecipeCard(Model):
     group_label: Mapped[str | None] = db.Column(db.String(64), nullable=True)
     closed_at = db.Column(db.DateTime, nullable=True)
 
-    chat: Mapped["AgentChat"] = cast(
+    chat: Mapped[AgentChat] = cast(
         Mapped["AgentChat"],
         db.relationship("AgentChat", uselist=False, back_populates="cards"),
     )
-    recipe: Mapped["Recipe | None"] = cast(
+    recipe: Mapped[Recipe | None] = cast(
         Mapped["Recipe | None"],
         db.relationship("Recipe", uselist=False),
     )
 
     @classmethod
-    def find_open_for_chat(cls, chat_id: int) -> list["AgentRecipeCard"]:
+    def find_open_for_chat(cls, chat_id: int) -> list[AgentRecipeCard]:
         return (
             cls.query.filter(cls.chat_id == chat_id, cls.closed_at.is_(None))
             .order_by(cls.position.asc(), cls.id.asc())
@@ -78,7 +78,7 @@ class AgentRecipeCard(Model):
         )
 
     @classmethod
-    def find_all_for_chat(cls, chat_id: int) -> list["AgentRecipeCard"]:
+    def find_all_for_chat(cls, chat_id: int) -> list[AgentRecipeCard]:
         return (
             cls.query.filter(cls.chat_id == chat_id)
             .order_by(cls.position.asc(), cls.id.asc())

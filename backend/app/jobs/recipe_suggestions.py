@@ -1,9 +1,10 @@
-from typing import cast
-from sqlalchemy import func
-from app.models import Recipe, RecipeHistory
-from app import app, db
 import datetime
+from typing import cast
 
+from sqlalchemy import func
+
+from app import app, db
+from app.models import Recipe, RecipeHistory
 from app.models.recipe_history import Status
 
 
@@ -16,11 +17,9 @@ def computeRecipeSuggestions(household_id: int):
             RecipeHistory.status == Status.ADDED,
             RecipeHistory.household_id == household_id,
             RecipeHistory.created_at
-            >= datetime.datetime.now(datetime.timezone.utc)
-            - datetime.timedelta(days=182),
+            >= datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=182),
             RecipeHistory.created_at
-            <= datetime.datetime.now(datetime.timezone.utc)
-            - datetime.timedelta(days=7),
+            <= datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=7),
         )
         .group_by(RecipeHistory.recipe_id)
         .all()
