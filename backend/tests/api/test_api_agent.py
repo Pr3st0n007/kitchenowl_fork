@@ -107,14 +107,16 @@ def test_agent_config_test_uses_provided_values_without_saving(
         captured["image_prompt"] = prompt
         return "https://example.test/icon.png"
 
-    with patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.__init__",
-        new=fake_init,
-    ), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
-    ), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
-        new=fake_generate_image,
+    with (
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.__init__",
+            new=fake_init,
+        ),
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
     ):
         res = user_client_with_household.post(
             f"{_config_path(household_id)}/test",
@@ -155,9 +157,12 @@ def test_agent_config_test_fails_when_image_generation_check_fails(
     def fake_generate_image(self, prompt):
         raise LLMError("Image generation did not return any images")
 
-    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
-        new=fake_generate_image,
+    with (
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
     ):
         res = user_client_with_household.post(f"{_config_path(household_id)}/test")
 
@@ -227,9 +232,12 @@ def test_agent_config_test_replaces_subject_placeholder_in_image_prompt(
         captured["prompt"] = prompt
         return "https://example.test/icon.png"
 
-    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
-        new=fake_generate_image,
+    with (
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
     ):
         res = user_client_with_household.post(
             f"{_config_path(household_id)}/test",
@@ -477,10 +485,11 @@ def test_chat_message_with_pdf_attachment_extracts_text(
         captured["messages"] = messages
         return LLMResponse(content="ok", tool_calls=[])
 
-    with patch(
-        "app.service.llm.agent._extract_pdf_text", return_value="2 Eier\n1 TL Salz"
-    ), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat
+    with (
+        patch(
+            "app.service.llm.agent._extract_pdf_text", return_value="2 Eier\n1 TL Salz"
+        ),
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake_chat),
     ):
         res = user_client_with_household.post(
             f"{_chats_path(household_id)}/{chat_id}/messages",
@@ -750,9 +759,12 @@ def test_test_endpoint_returns_reply_on_success(
     def fake_generate_image(self, prompt):
         return "https://example.test/icon.png"
 
-    with patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake), patch(
-        "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
-        new=fake_generate_image,
+    with (
+        patch("app.service.llm.provider.OpenAICompatibleProvider.chat", new=fake),
+        patch(
+            "app.service.llm.provider.OpenAICompatibleProvider.generate_image",
+            new=fake_generate_image,
+        ),
     ):
         res = user_client_with_household.post(f"{_config_path(household_id)}/test")
     assert res.status_code == 200

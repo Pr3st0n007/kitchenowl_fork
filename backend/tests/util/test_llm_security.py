@@ -175,8 +175,7 @@ def test_generate_image_accepts_base64_payload(monkeypatch: pytest.MonkeyPatch):
     )
 
     assert (
-        provider.generate_image("draw an icon")
-        == "data:image/png;base64,ZmFrZS1wbmc="
+        provider.generate_image("draw an icon") == "data:image/png;base64,ZmFrZS1wbmc="
     )
     assert captured["model"] == "gemini/gemini-2.5-flash-image"
 
@@ -192,7 +191,9 @@ def test_generate_image_retries_with_gemini_imagen_fallback(
         if model == "gemini/gemini-2.5-flash":
             return SimpleNamespace(data=[])
         if model == "gemini/gemini-2.5-flash-image":
-            return SimpleNamespace(data=[SimpleNamespace(url="https://example.test/fallback.png")])
+            return SimpleNamespace(
+                data=[SimpleNamespace(url="https://example.test/fallback.png")]
+            )
         return SimpleNamespace(data=[])
 
     monkeypatch.setitem(
@@ -212,7 +213,9 @@ def test_generate_image_retries_with_gemini_imagen_fallback(
         ),
     )
 
-    assert provider.generate_image("draw an icon") == "https://example.test/fallback.png"
+    assert (
+        provider.generate_image("draw an icon") == "https://example.test/fallback.png"
+    )
     assert calls == [
         "gemini/gemini-2.5-flash",
         "gemini/gemini-2.5-flash-image",
@@ -257,7 +260,9 @@ def test_generate_image_defaults_to_gemini_image_model(
 
     def fake_image_generation(**kwargs: Any):
         calls.append(cast(str, kwargs["model"]))
-        return SimpleNamespace(data=[SimpleNamespace(url="https://example.test/icon.png")])
+        return SimpleNamespace(
+            data=[SimpleNamespace(url="https://example.test/icon.png")]
+        )
 
     monkeypatch.setitem(
         sys.modules,
