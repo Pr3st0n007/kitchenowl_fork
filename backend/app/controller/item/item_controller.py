@@ -1,5 +1,6 @@
 import os
 import uuid
+import base64
 
 import blurhash
 import requests
@@ -21,6 +22,30 @@ from .schemas import AddItem, SearchByNameRequest, UpdateItem
 
 item = Blueprint("item", __name__)
 itemHousehold = Blueprint("item", __name__)
+
+
+def _render_icon_prompt(template: str, subject: str) -> str:
+    prompt = template.replace("{name}", subject)
+    prompt = prompt.replace("[SUBJECT]", subject)
+    return prompt
+
+
+def _image_bytes_from_provider_response(image_ref: str) -> bytes:
+    if image_ref.startswith("data:image/"):
+        _, _, payload = image_ref.partition(",")
+        if not payload:
+            raise InvalidUsage("Generated image data URL was empty")
+        try:
+            return base64.b64decode(payload, validate=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise InvalidUsage(f"Generated image data URL was invalid: {exc}") from exc
+
+    try:
+        response = requests.get(image_ref, timeout=10)
+        response.raise_for_status()
+        return response.content
+    except Exception as exc:
+        raise InvalidUsage(f"Failed to download generated image: {exc}")
 
 
 @itemHousehold.route("", methods=["GET"])
@@ -81,29 +106,27 @@ def generateItemIcon(household_id, id):
     if not cfg or not cfg.has_api_key():
         raise InvalidUsage("LLM Provider is not configured")
 
-    provider = get_provider(cfg)
+    try:
+        provider = get_provider(cfg)
+    except LLMError as exc:
+        raise InvalidUsage(str(exc))
     prompt = (
         cfg.icon_generation_prompt
         or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
     )
-    prompt = prompt.replace("{name}", item.name)
+    prompt = _render_icon_prompt(prompt, item.name)
 
     try:
         image_url = provider.generate_image(prompt)
     except LLMError as exc:
         raise InvalidUsage(str(exc))
 
-    # Download the image
-    try:
-        response = requests.get(image_url, timeout=10)
-        response.raise_for_status()
-    except Exception as exc:
-        raise InvalidUsage(f"Failed to download generated image: {exc}")
+    image_bytes = _image_bytes_from_provider_response(image_url)
 
     filename = secure_filename(str(uuid.uuid4()) + ".png")
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     with open(filepath, "wb") as f:
-        f.write(response.content)
+        f.write(image_bytes)
 
     blur = None
     try:

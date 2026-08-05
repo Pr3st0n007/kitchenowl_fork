@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import uuid
+import base64
 from types import SimpleNamespace
 
 import blurhash
@@ -62,6 +63,30 @@ def _derive_icon_name(subject: str) -> str:
     if not cleaned:
         return "generated"
     return cleaned.split()[0]
+
+
+def _render_icon_prompt(template: str, subject: str) -> str:
+    prompt = template.replace("{name}", subject)
+    prompt = prompt.replace("[SUBJECT]", subject)
+    return prompt
+
+
+def _image_bytes_from_provider_response(image_ref: str) -> bytes:
+    if image_ref.startswith("data:image/"):
+        _, _, payload = image_ref.partition(",")
+        if not payload:
+            raise InvalidUsage("Generated image data URL was empty")
+        try:
+            return base64.b64decode(payload, validate=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise InvalidUsage(f"Generated image data URL was invalid: {exc}") from exc
+
+    try:
+        response = requests.get(image_ref, timeout=10)
+        response.raise_for_status()
+        return response.content
+    except Exception as exc:
+        raise InvalidUsage(f"Failed to download generated image: {exc}")
 
 
 def _parse_json_object_request() -> dict:
@@ -207,29 +232,28 @@ def generate_icon(household_id):
     req = _parse_json_object_request()
     item_name = str(req.get("name") or "Unknown item").strip() or "Unknown item"
 
-    provider = get_provider(cfg)
+    try:
+        provider = get_provider(cfg)
+    except LLMError as exc:
+        raise InvalidUsage(str(exc))
     prompt = (
         cfg.icon_generation_prompt
         or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
     )
-    prompt = prompt.replace("{name}", item_name)
+    prompt = _render_icon_prompt(prompt, item_name)
 
     try:
         image_url = provider.generate_image(prompt)
     except LLMError as exc:
         raise InvalidUsage(str(exc))
 
-    try:
-        response = requests.get(image_url, timeout=10)
-        response.raise_for_status()
-    except Exception as exc:
-        raise InvalidUsage(f"Failed to download generated image: {exc}")
+    image_bytes = _image_bytes_from_provider_response(image_url)
 
     filename = secure_filename(str(uuid.uuid4()) + ".png")
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     with open(filepath, "wb") as f:
-        f.write(response.content)
+        f.write(image_bytes)
 
     blur = None
     try:
@@ -264,7 +288,13 @@ def test_config(household_id):
     if not test_cfg.model or not test_cfg.has_api_key():
         raise InvalidUsage("Provider, model and API key are required to run a test")
 
-    provider = get_provider(test_cfg)
+    try:
+        provider = get_provider(test_cfg)
+    except LLMError as exc:
+        _logger.info("LLM connection test setup failed: %s", exc)
+        return jsonify(
+            {"ok": False, "error": safe_error_message(exc, "LLM provider error")}
+        ), 200
     try:
         chat_response = provider.chat(
             messages=[
@@ -286,7 +316,7 @@ def test_config(household_id):
         test_cfg.icon_generation_prompt
         or "An icon for the ingredient {name}, minimalist, flat vector style, solid colors."
     )
-    image_prompt = image_prompt.replace("{name}", "test ingredient")
+    image_prompt = _render_icon_prompt(image_prompt, "test ingredient")
     try:
         provider.generate_image(image_prompt)
     except LLMError as exc:

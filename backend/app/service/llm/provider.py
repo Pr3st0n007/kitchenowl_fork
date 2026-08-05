@@ -19,6 +19,8 @@ _BUILTIN_PROVIDER_HOSTS = {
     LLMProviderType.OPENAI: {"api.openai.com"},
     LLMProviderType.GEMINI: {"generativelanguage.googleapis.com"},
 }
+_OPENAI_IMAGE_DEFAULT_MODEL = "dall-e-3"
+_GEMINI_IMAGE_FALLBACK_MODEL = "gemini/gemini-2.5-flash-image"
 
 
 class LLMError(Exception):
@@ -243,7 +245,8 @@ class OpenAICompatibleProvider(LLMProvider):
             Callable[..., object], litellm_any.image_generation
         )
 
-        model = self.config.icon_generation_model or "dall-e-3"
+        configured_icon_model = (self.config.icon_generation_model or "").strip()
+        model = configured_icon_model or _default_image_model_for(self.config.provider)
 
         if self.config.provider == LLMProviderType.GEMINI and "/" not in model:
             model = f"gemini/{model}"
@@ -262,25 +265,106 @@ class OpenAICompatibleProvider(LLMProvider):
 
         try:
             response_obj: object = image_generation(**kwargs)
-            data_obj = _obj_get(response_obj, "data")
-            data: list[object]
-            if isinstance(data_obj, Sequence) and not isinstance(
-                data_obj, (str, bytes, bytearray)
-            ):
-                data = list(cast(Sequence[object], data_obj))
-            else:
-                data = []
-            if not data:
-                raise LLMError("Image generation did not return any images")
+            parsed = _extract_image_reference(response_obj)
+            if parsed:
+                return parsed
 
-            first = data[0]
-            image_url = _as_str(_obj_get(first, "url"), "")
-            if not image_url:
-                raise LLMError("Image generation response did not include an image URL")
-            return image_url
+            should_try_gemini_fallback = (
+                self.config.provider == LLMProviderType.GEMINI
+                and "image" not in configured_icon_model.lower()
+                and model != _GEMINI_IMAGE_FALLBACK_MODEL
+            )
+            if should_try_gemini_fallback:
+                fallback_kwargs = dict(kwargs)
+                fallback_kwargs["model"] = _GEMINI_IMAGE_FALLBACK_MODEL
+                _logger.info(
+                    "LLM image generation returned no image for model '%s'; retrying with '%s'",
+                    model,
+                    _GEMINI_IMAGE_FALLBACK_MODEL,
+                )
+                fallback_response_obj: object = image_generation(**fallback_kwargs)
+                fallback_parsed = _extract_image_reference(fallback_response_obj)
+                if fallback_parsed:
+                    return fallback_parsed
+
+            response_shape = _describe_image_response_shape(response_obj)
+            response_error = _extract_image_error_detail(response_obj)
+            raise LLMError(
+                "Image generation did not return any images"
+                + (f" ({response_error})" if response_error else "")
+                + (f" (response shape: {response_shape})" if response_shape else "")
+            )
         except Exception as exc:
             _logger.warning("LLM image generation failed: %s", exc, exc_info=True)
             raise LLMError(_friendly_image_error_message(exc)) from exc
+
+
+def _default_image_model_for(provider: LLMProviderType) -> str:
+    if provider == LLMProviderType.GEMINI:
+        return _GEMINI_IMAGE_FALLBACK_MODEL
+    return _OPENAI_IMAGE_DEFAULT_MODEL
+
+
+def _extract_image_reference(response_obj: object) -> str | None:
+    data_obj = _obj_get(response_obj, "data")
+    data: list[object]
+    if isinstance(data_obj, Sequence) and not isinstance(
+        data_obj, (str, bytes, bytearray)
+    ):
+        data = list(cast(Sequence[object], data_obj))
+    else:
+        data = []
+    if not data:
+        return None
+
+    first = data[0]
+    image_url = _as_str(_obj_get(first, "url"), "")
+    if image_url:
+        return image_url
+    image_b64 = _as_str(_obj_get(first, "b64_json"), "")
+    if image_b64:
+        return f"data:image/png;base64,{image_b64}"
+    return None
+
+
+def _describe_image_response_shape(response_obj: object) -> str:
+    if isinstance(response_obj, Mapping):
+        keys = [str(k) for k in response_obj.keys()]
+    else:
+        keys = []
+        for attr in (
+            "data",
+            "error",
+            "choices",
+            "output",
+            "message",
+            "status",
+            "model",
+        ):
+            if hasattr(response_obj, attr):
+                keys.append(attr)
+    return ", ".join(keys[:8])
+
+
+def _extract_image_error_detail(response_obj: object) -> str:
+    error_obj = _obj_get(response_obj, "error")
+    if error_obj is not None:
+        message = _as_str(_obj_get(error_obj, "message"), "")
+        if message:
+            return message
+        if isinstance(error_obj, Mapping):
+            compact = str(dict(error_obj))
+            return compact[:200]
+
+    message = _as_str(_obj_get(response_obj, "message"), "")
+    if message:
+        return message
+
+    status = _as_str(_obj_get(response_obj, "status"), "")
+    if status:
+        return f"status={status}"
+
+    return ""
 
 
 def _friendly_image_error_message(exc: Exception) -> str:

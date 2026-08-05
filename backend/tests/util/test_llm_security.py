@@ -150,6 +150,199 @@ def test_generate_image_ignores_api_base_for_native_gemini(
     assert "api_base" not in captured
 
 
+def test_generate_image_accepts_base64_payload(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, Any] = {}
+
+    def fake_image_generation(**kwargs: Any):
+        captured.update(kwargs)
+        return SimpleNamespace(data=[SimpleNamespace(b64_json="ZmFrZS1wbmc=")])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = cast(
+        LLMConfig,
+        SimpleNamespace(
+            provider=LLMProviderType.GEMINI,
+            icon_generation_model="gemini-2.5-flash-image",
+            get_api_key=lambda: "test-key",
+            effective_base_url=lambda: None,
+        ),
+    )
+
+    assert (
+        provider.generate_image("draw an icon")
+        == "data:image/png;base64,ZmFrZS1wbmc="
+    )
+    assert captured["model"] == "gemini/gemini-2.5-flash-image"
+
+
+def test_generate_image_retries_with_gemini_imagen_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def fake_image_generation(**kwargs: Any):
+        model = cast(str, kwargs["model"])
+        calls.append(model)
+        if model == "gemini/gemini-2.5-flash":
+            return SimpleNamespace(data=[])
+        if model == "gemini/gemini-2.5-flash-image":
+            return SimpleNamespace(data=[SimpleNamespace(url="https://example.test/fallback.png")])
+        return SimpleNamespace(data=[])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = cast(
+        LLMConfig,
+        SimpleNamespace(
+            provider=LLMProviderType.GEMINI,
+            icon_generation_model="gemini-2.5-flash",
+            get_api_key=lambda: "test-key",
+            effective_base_url=lambda: None,
+        ),
+    )
+
+    assert provider.generate_image("draw an icon") == "https://example.test/fallback.png"
+    assert calls == [
+        "gemini/gemini-2.5-flash",
+        "gemini/gemini-2.5-flash-image",
+    ]
+
+
+def test_generate_image_does_not_retry_non_gemini_provider(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def fake_image_generation(**kwargs: Any):
+        calls.append(cast(str, kwargs["model"]))
+        return SimpleNamespace(data=[])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = cast(
+        LLMConfig,
+        SimpleNamespace(
+            provider=LLMProviderType.OPENAI,
+            icon_generation_model="dall-e-3",
+            get_api_key=lambda: "test-key",
+            effective_base_url=lambda: "https://api.openai.com/v1",
+        ),
+    )
+
+    with pytest.raises(LLMError, match="did not return any images"):
+        provider.generate_image("draw an icon")
+    assert calls == ["dall-e-3"]
+
+
+def test_generate_image_defaults_to_gemini_image_model(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def fake_image_generation(**kwargs: Any):
+        calls.append(cast(str, kwargs["model"]))
+        return SimpleNamespace(data=[SimpleNamespace(url="https://example.test/icon.png")])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = cast(
+        LLMConfig,
+        SimpleNamespace(
+            provider=LLMProviderType.GEMINI,
+            icon_generation_model=None,
+            get_api_key=lambda: "test-key",
+            effective_base_url=lambda: None,
+        ),
+    )
+
+    assert provider.generate_image("draw an icon") == "https://example.test/icon.png"
+    assert calls == ["gemini/gemini-2.5-flash-image"]
+
+
+def test_generate_image_does_not_retry_when_explicit_image_model_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def fake_image_generation(**kwargs: Any):
+        calls.append(cast(str, kwargs["model"]))
+        return SimpleNamespace(data=[])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = cast(
+        LLMConfig,
+        SimpleNamespace(
+            provider=LLMProviderType.GEMINI,
+            icon_generation_model="gemini-3.1-flash-lite-image",
+            get_api_key=lambda: "test-key",
+            effective_base_url=lambda: None,
+        ),
+    )
+
+    with pytest.raises(LLMError, match="did not return any images"):
+        provider.generate_image("draw an icon")
+
+    assert calls == ["gemini/gemini-3.1-flash-lite-image"]
+
+
+def test_generate_image_surfaces_embedded_response_error_when_data_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_image_generation(**kwargs: Any):
+        return {
+            "data": [],
+            "error": {"message": "Model does not support image generation"},
+        }
+
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(image_generation=fake_image_generation),
+    )
+
+    provider = OpenAICompatibleProvider.__new__(OpenAICompatibleProvider)
+    provider.config = cast(
+        LLMConfig,
+        SimpleNamespace(
+            provider=LLMProviderType.OPENAI,
+            icon_generation_model="dall-e-3",
+            get_api_key=lambda: "test-key",
+            effective_base_url=lambda: "https://api.openai.com/v1",
+        ),
+    )
+
+    with pytest.raises(LLMError) as exc_info:
+        provider.generate_image("draw an icon")
+    assert "does not support image generation" in str(exc_info.value)
+
+
 def test_generate_image_rate_limit_error_is_user_friendly(
     monkeypatch: pytest.MonkeyPatch,
 ):
